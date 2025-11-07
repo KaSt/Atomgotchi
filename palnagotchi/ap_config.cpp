@@ -5,6 +5,14 @@ WebServer server(80);
 bool ap_mode_active = false;
 unsigned long ap_start_time = 0;
 
+// JSON parsing constants (compile-time)
+const char JSON_DEVICE_NAME_KEY[] = "\"device_name\":\"";
+const char JSON_BRIGHTNESS_KEY[] = "\"brightness\":";
+const char JSON_SOUND_ENABLED_KEY[] = "\"sound_enabled\":";
+const size_t JSON_DEVICE_NAME_KEY_LEN = sizeof(JSON_DEVICE_NAME_KEY) - 1;
+const size_t JSON_BRIGHTNESS_KEY_LEN = sizeof(JSON_BRIGHTNESS_KEY) - 1;
+const size_t JSON_SOUND_ENABLED_KEY_LEN = sizeof(JSON_SOUND_ENABLED_KEY) - 1;
+
 const char* html_page = R"rawliteral(
 <!DOCTYPE html>
 <html>
@@ -165,6 +173,15 @@ void handleGetConfig() {
   server.send(200, "application/json", json);
 }
 
+// Helper function to find end of JSON field value
+int findJsonFieldEnd(const String& body, int start_pos) {
+  int end_pos = body.indexOf(",", start_pos);
+  if (end_pos == -1) {
+    end_pos = body.indexOf("}", start_pos);
+  }
+  return end_pos;
+}
+
 void handleSaveConfig() {
   if (server.hasArg("plain")) {
     String body = server.arg("plain");
@@ -172,18 +189,10 @@ void handleSaveConfig() {
     // Simple JSON parsing (avoiding ArduinoJson for minimal dependencies)
     DeviceConfig* config = getConfig();
     
-    // JSON field identifiers (compile-time constants)
-    const char DEVICE_NAME_KEY[] = "\"device_name\":\"";
-    const char BRIGHTNESS_KEY[] = "\"brightness\":";
-    const char SOUND_ENABLED_KEY[] = "\"sound_enabled\":";
-    const size_t DEVICE_NAME_KEY_LEN = sizeof(DEVICE_NAME_KEY) - 1;
-    const size_t BRIGHTNESS_KEY_LEN = sizeof(BRIGHTNESS_KEY) - 1;
-    const size_t SOUND_ENABLED_KEY_LEN = sizeof(SOUND_ENABLED_KEY) - 1;
-    
     // Parse device_name
-    int name_start = body.indexOf(DEVICE_NAME_KEY);
+    int name_start = body.indexOf(JSON_DEVICE_NAME_KEY);
     if (name_start >= 0) {
-      name_start += DEVICE_NAME_KEY_LEN;
+      name_start += JSON_DEVICE_NAME_KEY_LEN;
       int name_end = body.indexOf("\"", name_start);
       if (name_end > name_start) {
         String name = body.substring(name_start, name_end);
@@ -193,13 +202,10 @@ void handleSaveConfig() {
     }
     
     // Parse brightness with validation
-    int bright_start = body.indexOf(BRIGHTNESS_KEY);
+    int bright_start = body.indexOf(JSON_BRIGHTNESS_KEY);
     if (bright_start >= 0) {
-      bright_start += BRIGHTNESS_KEY_LEN;
-      int bright_end = body.indexOf(",", bright_start);
-      if (bright_end == -1) {
-        bright_end = body.indexOf("}", bright_start);
-      }
+      bright_start += JSON_BRIGHTNESS_KEY_LEN;
+      int bright_end = findJsonFieldEnd(body, bright_start);
       if (bright_end > bright_start) {
         String bright = body.substring(bright_start, bright_end);
         int brightness_value = bright.toInt();
@@ -211,13 +217,10 @@ void handleSaveConfig() {
     }
     
     // Parse sound_enabled
-    int sound_start = body.indexOf(SOUND_ENABLED_KEY);
+    int sound_start = body.indexOf(JSON_SOUND_ENABLED_KEY);
     if (sound_start >= 0) {
-      sound_start += SOUND_ENABLED_KEY_LEN;
-      int sound_end = body.indexOf(",", sound_start);
-      if (sound_end == -1) {
-        sound_end = body.indexOf("}", sound_start);
-      }
+      sound_start += JSON_SOUND_ENABLED_KEY_LEN;
+      int sound_end = findJsonFieldEnd(body, sound_start);
       if (sound_end > sound_start) {
         String sound_value = body.substring(sound_start, sound_end);
         sound_value.trim();
@@ -282,10 +285,9 @@ void handleAPConfig() {
   
   server.handleClient();
   
-  // Auto-timeout after AP_TIMEOUT_MS
+  // Auto-timeout after configured duration
   if (millis() - ap_start_time > AP_TIMEOUT_MS) {
     stopAPMode();
-    // Note: The main loop will detect !isAPModeActive() and should exit AP state
   }
 }
 

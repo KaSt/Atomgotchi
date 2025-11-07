@@ -29,7 +29,8 @@ void saveConfig() {
 }
 
 void resetConfig() {
-  strcpy(device_config.device_name, "Palnagotchi");
+  strncpy(device_config.device_name, "Palnagotchi", sizeof(device_config.device_name) - 1);
+  device_config.device_name[sizeof(device_config.device_name) - 1] = '\0';
   device_config.brightness = 128;
   device_config.sound_enabled = false;
 }

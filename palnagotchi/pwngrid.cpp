@@ -1,4 +1,5 @@
 #include "pwngrid.h"
+#include "config.h"
 
 uint8_t pwngrid_friends_tot = 0;
 pwngrid_peer pwngrid_peers[255];
@@ -35,7 +36,7 @@ esp_err_t pwngridAdvertise(uint8_t channel, String face) {
   String pal_json_str = "";
 
   pal_json["pal"] = true;  // Also detect other Palnagotchis
-  pal_json["name"] = "Palnagotchi";
+  pal_json["name"] = getDeviceName();
   pal_json["face"] = face;
   pal_json["epoch"] = 1;
   pal_json["grid_version"] = "1.10.3";

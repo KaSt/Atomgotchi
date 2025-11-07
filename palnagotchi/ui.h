@@ -4,6 +4,11 @@
 #include "mood.h"
 #include "pwngrid.h"
 
+// Forward declarations for state management
+void enterAPConfigMode();
+void exitAPConfigMode();
+uint8_t getDeviceState();
+
 void initUi();
 void wakeUp();
 void drawMood(String face, String phrase, bool broken = false);

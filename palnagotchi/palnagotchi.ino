@@ -3,10 +3,13 @@
 #endif
 
 #include "M5Unified.h"
+#include "config.h"
+#include "ap_config.h"
 #include "ui.h"
 
 #define STATE_INIT 0
 #define STATE_WAKE 1
+#define STATE_AP_CONFIG 2
 #define STATE_HALT 255
 
 uint8_t state;
@@ -24,6 +27,8 @@ void initM5() {
 
 void setup() {
   initM5();
+  initConfig();
+  initAPConfig();
   initMood();
   initPwngrid();
   initUi();
@@ -77,6 +82,12 @@ void loop() {
     state = STATE_WAKE;
   }
 
+  if (state == STATE_AP_CONFIG) {
+    handleAPConfig();
+    updateUi(false);
+    return;
+  }
+
   if (state == STATE_WAKE) {
     checkPwngridGoneFriends();
     advertise(current_channel++);
@@ -86,4 +97,20 @@ void loop() {
   }
 
   updateUi(true);
+}
+
+void enterAPConfigMode() {
+  state = STATE_AP_CONFIG;
+  startAPMode();
+}
+
+void exitAPConfigMode() {
+  stopAPMode();
+  // Reinitialize WiFi for normal operation
+  initPwngrid();
+  state = STATE_WAKE;
+}
+
+uint8_t getDeviceState() {
+  return state;
 }

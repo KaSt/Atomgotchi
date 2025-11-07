@@ -1,4 +1,6 @@
 #include "ui.h"
+#include "config.h"
+#include "ap_config.h"
 
 M5Canvas canvas_top(&M5.Display);
 M5Canvas canvas_main(&M5.Display);
@@ -21,15 +23,14 @@ struct menu {
 
 menu main_menu[] = {
     {"Nearby Pwnagotchis", 2},
-    // {"Settings", 4},
+    {"Settings", 4},
     {"About", 8}
     // {"Friend spam", 16},
 };
 
 menu settings_menu[] = {
-    {"Change name", 40},
-    {"Display brightness", 41},
-    {"Sound", 42},
+    {"WiFi Config (AP)", 40},
+    {"Back", 41},
 };
 
 int main_menu_len = sizeof(main_menu) / sizeof(menu);
@@ -118,6 +119,15 @@ void updateUi(bool show_toolbars) {
   #endif
 
   if (toggleMenuBtnPressed()) {
+    // If in AP config mode, exit it
+    if (isAPModeActive()) {
+      exitAPConfigMode();
+      menu_open = false;
+      menu_current_cmd = 0;
+      menu_current_opt = 0;
+      return;
+    }
+    
     // If menu is open, return to main menu
     // If not, toggle menu
     if (menu_open == true && menu_current_cmd != 0) {
@@ -137,7 +147,7 @@ void updateUi(bool show_toolbars) {
   drawBottomCanvas(getPwngridRunTotalPeers(), getPwngridTotalPeers(),
                    getPwngridLastFriendName(), getPwngridClosestRssi());
 
-  if (menu_open) {
+  if (menu_open || isAPModeActive()) {
     drawMenu();
   } else {
     drawMood(mood_face, mood_phrase, mood_broken);
@@ -307,7 +317,54 @@ void drawAboutMenu() {
                      display_h * 0.65);
 }
 
+void drawAPConfigMenu() {
+  canvas_main.fillSprite(BLACK);
+  canvas_main.setTextSize(1);
+  canvas_main.setTextColor(GREEN);
+  canvas_main.setColor(GREEN);
+  canvas_main.setTextDatum(top_left);
+  
+  int y = PADDING;
+  canvas_main.setCursor(0, y);
+  canvas_main.println("WiFi Config Mode Active");
+  y += 20;
+  canvas_main.setCursor(0, y);
+  canvas_main.println("");
+  y += 20;
+  canvas_main.setCursor(0, y);
+  canvas_main.println("Connect to WiFi:");
+  y += 15;
+  canvas_main.setCursor(0, y);
+  canvas_main.setTextColor(YELLOW);
+  canvas_main.println("  SSID: Palnagotchi-Config");
+  y += 15;
+  canvas_main.setCursor(0, y);
+  canvas_main.println("  PASS: palnagotchi");
+  y += 20;
+  canvas_main.setTextColor(GREEN);
+  canvas_main.setCursor(0, y);
+  canvas_main.println("Then open browser:");
+  y += 15;
+  canvas_main.setCursor(0, y);
+  canvas_main.setTextColor(YELLOW);
+  canvas_main.println("  http://192.168.4.1");
+  y += 20;
+  canvas_main.setTextColor(TFT_DARKGRAY);
+  canvas_main.setCursor(0, y);
+  canvas_main.println("Auto-exits in 5 minutes");
+  y += 15;
+  canvas_main.setCursor(0, y);
+  canvas_main.println("or press menu to exit");
+}
+
 void drawMenu() {
+  // Check if in AP config mode
+  uint8_t device_state = getDeviceState();
+  if (device_state == 2) {  // STATE_AP_CONFIG
+    drawAPConfigMenu();
+    return;
+  }
+
   if (isNextPressed()) {
     // if (menu_current_opt < menu_current_size - 1) {
     menu_current_opt++;
@@ -344,6 +401,15 @@ void drawMenu() {
       break;
     case 8:
       drawAboutMenu();
+      break;
+    case 40:
+      // WiFi Config (AP) selected
+      enterAPConfigMode();
+      break;
+    case 41:
+      // Back selected
+      menu_current_cmd = 0;
+      menu_current_opt = 0;
       break;
     default:
       drawMainMenu();

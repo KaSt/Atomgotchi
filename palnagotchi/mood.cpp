@@ -122,6 +122,7 @@ void initMood() {
     palnagotchi_moods = palnagotchi_small_moods;
     palnagotchi_moods_desc = homeygotchi_moods_short_desc;
   }
+  Serial.println("Mood initialised.");
 }
 
 void setMood(uint8_t mood, String face, String phrase, bool broken) {
@@ -140,4 +141,5 @@ void setMood(uint8_t mood, String face, String phrase, bool broken) {
   } else {
     current_phrase = palnagotchi_moods_desc[current_mood];
   }
+  Serial.println("Mood has been set.");
 }

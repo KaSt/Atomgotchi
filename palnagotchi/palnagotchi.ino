@@ -23,6 +23,10 @@ void initM5() {
 }
 
 void setup() {
+  Serial.begin(115200);
+  delay(1000); // Give serial time to initialize
+  Serial.println("\n\n=== BOOT START ===");
+
   initM5();
   initConfig();
   initAPConfig();
@@ -37,8 +41,11 @@ uint32_t last_mood_switch = 10001;
 
 void wakeUp() {
   for (uint8_t i = 0; i < 3; i++) {
+    Serial.println("WakeUp - Setting Mood...");
     setMood(i);
+    Serial.println("WakeUp - Updating UI...");
     updateUi();
+    Serial.println("WakeUp - Delaying 1250...");
     delay(1250);
   }
 }
@@ -67,21 +74,26 @@ void advertise(uint8_t channel) {
 }
 
 void loop() {
+  Serial.printf("Loop Begin\nFree heap: %d bytes\n", ESP.getFreeHeap());
+  
   M5.update();
   #ifdef ARDUINO_M5STACK_CARDPUTER
     M5Cardputer.update();
   #endif
 
   if (state == STATE_HALT) {
+    Serial.println("Loop - STATE_HALT");
     return;
   }
 
   if (state == STATE_INIT) {
+    Serial.println("Loop - STATE_INIT");
     wakeUp();
     state = STATE_WAKE;
   }
 
   if (state == STATE_AP_CONFIG) {
+    Serial.println("Loop - STATE_AP_CONFIG");
     handleAPConfig();
     // Check if AP mode timed out
     if (!isAPModeActive()) {
@@ -92,6 +104,7 @@ void loop() {
   }
 
   if (state == STATE_WAKE) {
+    Serial.println("Loop - STATE_WAKE");
     checkPwngridGoneFriends();
     advertise(current_channel++);
     if (current_channel == 15) {
@@ -99,6 +112,7 @@ void loop() {
     }
   }
 
+  Serial.println("Loop - updateUi(true)");
   updateUi(true);
   Serial.println("Done loop");
 }
@@ -116,5 +130,6 @@ void exitAPConfigMode() {
 }
 
 uint8_t getDeviceState() {
+  Serial.println("getDeviceState");
   return state;
 }

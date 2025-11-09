@@ -113,6 +113,8 @@ bool isPrevPressed() {
 }
 
 void updateUi(bool show_toolbars) {
+  Serial.println("UI - updateUi.");
+
   #ifdef ARDUINO_M5STACK_CARDPUTER
     keyboard_changed = M5Cardputer.Keyboard.isChange();
   #else
@@ -139,20 +141,28 @@ void updateUi(bool show_toolbars) {
     }
   }
 
+  Serial.println("UI - Mood.");
+
   uint8_t mood_id = getCurrentMoodId();
   String mood_face = getCurrentMoodFace();
   String mood_phrase = getCurrentMoodPhrase();
   bool mood_broken = isCurrentMoodBroken();
 
+  Serial.println("UI - Draw canvas.");
+
   drawTopCanvas();
   drawBottomCanvas(getPwngridRunTotalPeers(), getPwngridTotalPeers(),
                    getPwngridLastFriendName(), getPwngridClosestRssi());
+
+  Serial.println("UI - Menu or Mood.");
 
   if (menu_open || isAPModeActive()) {
     drawMenu();
   } else {
     drawMood(mood_face, mood_phrase, mood_broken);
   }
+
+  Serial.println("UI - startWrite.");
 
   M5.Display.startWrite();
   if (show_toolbars) {
@@ -161,6 +171,8 @@ void updateUi(bool show_toolbars) {
   }
   canvas_main.pushSprite(0, canvas_top_h);
   M5.Display.endWrite();
+
+  Serial.println("UI - Ended updateUi.");
 }
 
 void drawTopCanvas() {
@@ -219,8 +231,9 @@ void drawBottomCanvas(uint8_t friends_run, uint8_t friends_tot,
   String rssi_bars = getRssiBars(rssi);
   char stats[25] = "FRND 0 (0)";
   if (friends_run > 0) {
-    sprintf(stats, "FRND %d (%d) [%s] %s", friends_run, friends_tot,
-            last_friend_name, rssi_bars);
+     snprintf(stats, sizeof(stats), "FRND %d (%d) [%s] %s", 
+         friends_run, friends_tot,
+         last_friend_name.c_str(), rssi_bars.c_str());
   }
 
   canvas_bot.drawString(stats, 0, 5);
@@ -288,8 +301,10 @@ void drawNearbyMenu() {
 
   char display_str[50] = "";
   for (uint8_t i = 0; i < len; i++) {
-    sprintf(display_str, "%s %s [%s]", (menu_current_opt == i) ? ">" : " ",
-            pwngrid_peers[i].name, getRssiBars(pwngrid_peers[i].rssi));
+    snprintf(display_str, sizeof(display_str), "%s %s [%s]", 
+         (menu_current_opt == i) ? ">" : " ",
+         pwngrid_peers[i].name, 
+         getRssiBars(pwngrid_peers[i].rssi).c_str());
     int y = PADDING + (i * ROW_SIZE / 2);
     canvas_main.drawString(display_str, 0, y);
   }

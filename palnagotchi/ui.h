@@ -3,7 +3,6 @@
 #endif
 #include "mood.h"
 #include "pwngrid.h"
-#include "ap_config.h"
 
 // Forward declarations for state management
 void enterAPConfigMode();

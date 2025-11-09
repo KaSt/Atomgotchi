@@ -5,6 +5,8 @@ uint8_t pwngrid_friends_tot = 0;
 pwngrid_peer pwngrid_peers[255];
 String pwngrid_last_friend_name = "";
 
+DeviceConfig* config = getConfig();
+
 uint8_t getPwngridTotalPeers() { return EEPROM.read(0) + pwngrid_friends_tot; }
 uint8_t getPwngridRunTotalPeers() { return pwngrid_friends_tot; }
 String getPwngridLastFriendName() { return pwngrid_last_friend_name; }
@@ -188,6 +190,12 @@ void getMAC(char *addr, uint8_t *data, uint16_t offset) {
           data[offset + 4], data[offset + 5]);
 }
 
+void handlePacket(wifi_promiscuous_pkt_t *snifferPacket) {
+  if (( (snifferPacket->payload[30] == 0x88 && snifferPacket->payload[31] == 0x8e)|| ( snifferPacket->payload[32] == 0x88 && snifferPacket->payload[33] == 0x8e) )) {
+    Serial.println("We have EAPOL");
+  }
+}
+
 void pwnSnifferCallback(void *buf, wifi_promiscuous_pkt_type_t type) {
 
   //Serial.println("pwnSnifferCallback...");
@@ -204,6 +212,12 @@ void pwnSnifferCallback(void *buf, wifi_promiscuous_pkt_type_t type) {
     const wifi_ieee80211_packet_t *ipkt =
         (wifi_ieee80211_packet_t *)snifferPacket->payload;
     const WifiMgmtHdr *hdr = &ipkt->hdr;
+
+    //Check if we do something about EAPOLs
+    if (config->personality == PASSIVE || config->personality == AGGRESSIVE) {
+      Serial.println("We're interested in the received packet");
+      handlePacket(snifferPacket);
+    }
 
     // if ((snifferPacket->payload[0] == 0x80) && (buf == 0)) {
     if ((snifferPacket->payload[0] == 0x80)) {

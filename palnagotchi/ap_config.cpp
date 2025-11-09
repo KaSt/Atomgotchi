@@ -1,5 +1,4 @@
 #include "ap_config.h"
-#include "M5Unified.h"
 
 WebServer server(80);
 bool ap_mode_active = false;
@@ -273,16 +272,6 @@ void startAPMode() {
   esp_wifi_set_promiscuous(false);
   delay(100);  // Give it time to stop
 
-  // Disconnect and stop all WiFi operations
-  Serial.println("Disconnecting WiFi...");
-  WiFi.disconnect(true);  // true = wifioff
-  delay(100);
-
-  // Completely stop WiFi
-  Serial.println("Stopping WiFi...");
-  WiFi.mode(WIFI_OFF);
-  delay(500);  // Important: Give time for mode to fully stop
-
   // Now start AP mode
   Serial.println("WiFi.mode(WIFI_AP)");
   WiFi.mode(WIFI_AP);
@@ -304,9 +293,9 @@ void startAPMode() {
     ap_start_time = millis();
     Serial.println("AP Mode - Started.");
   } else {
-    Serial.println("ERROR: Failed to start AP mode!");
-    // Optionally: try to restart WiFi in station mode
-    ap_mode_active = false;
+      Serial.println("ERROR: Failed to start AP mode!");
+      // Optionally: try to restart WiFi in station mode
+      ap_mode_active = false;
   }
 }
 

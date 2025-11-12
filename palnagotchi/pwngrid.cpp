@@ -1,6 +1,9 @@
 #include "pwngrid.h"
 #include "config.h"
 
+unsigned long fullPacketStartTime = 0;
+const unsigned long PACKET_TIMEOUT_MS = 5000; // 5 seconds
+
 uint8_t pwngrid_friends_tot = 0;
 uint8_t pwngrid_friends_run = 0;
 
@@ -587,12 +590,13 @@ void pwnSnifferCallback(void *buf, wifi_promiscuous_pkt_type_t type) {
           packet.concat(ie_data);
           if (packet.indexOf('{') == 0) {
               // Start of NEW JSON
-              Serial.println("Start of Advertise packet: " + packet);
+              //Serial.println("Start of Advertise packet: " + packet);
               fullPacket = packet;
-              
+              fullPacketStartTime = millis();
+
               // Check if it's also complete in one IE (small JSON)
               if (packet.length() > 0 && packet[packet.length() - 1] == '}') {
-                  Serial.println("Complete JSON in single IE!");
+                  //Serial.println("Complete JSON in single IE!");
                   const size_t DOC_SIZE = 4096;
                   DynamicJsonDocument sniffed_json(DOC_SIZE);
                   DeserializationError result = deserializeJson(sniffed_json, fullPacket.c_str());
@@ -607,6 +611,11 @@ void pwnSnifferCallback(void *buf, wifi_promiscuous_pkt_type_t type) {
                   fullPacket = "";
               }
           } else if (fullPacket.length() > 0) {
+              if (millis() - fullPacketStartTime > PACKET_TIMEOUT_MS) {
+                  Serial.println("Packet reassembly timeout, discarding");
+                  fullPacket = "";
+                  return;
+              }
               // Continuation of existing JSON
               fullPacket.concat(packet);
               if (packet.length() > 0 && packet[packet.length() - 1] == '}') {

@@ -508,6 +508,7 @@ void drawAPConfigMenu() {
   canvas_main.setCursor(0, y);
   canvas_main.println("AP:");
   y += 15;
+  canvas_main.setTextSize(1);
   canvas_main.setCursor(0, y);
   canvas_main.setTextColor(YELLOW);
   canvas_main.println("  SSID: Gotchi");

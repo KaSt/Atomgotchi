@@ -1,3 +1,6 @@
+#include "esp_wifi.h"
+#include "esp_err.h"
+
 #include "config.h"
 
 DeviceConfig device_config;

@@ -67,10 +67,13 @@ bool addFriend(pwngrid_peer newFriend) {
 // - ArduinoJson incluso
 
 bool mergeFriend(const pwngrid_peer &nf) {
-  // Apri DB in lettura; se non esiste, fai direttamente insert
+
+  Serial.println("Checking Friend name: "+nf.name);
+
   File in = LittleFS.open(FR_TBL, FILE_READ);
   if (!in) {
     // DB non ancora creato: inseriamo semplicemente
+    Serial.println("Not present in DB yet, calling addFriend for: " + nf.name);
     return addFriend(nf);
   }
 

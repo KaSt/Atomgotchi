@@ -82,7 +82,11 @@ const char* html_page = R"rawliteral(
   </style>
 </head>
 <body>
-  <h1>Gotchi Configuration</h1>
+  <h1>Welcome to Gotchu</h1>
+  <div style="margin-top:16px">
+    <a href="/friends">Friends</a> &nbsp;|&nbsp;
+    <a href="/packets">Packets</a>
+  </div>
   <form id="configForm">
     <div class="form-group">
       <label for="device_name">Device Name:</label>
@@ -162,6 +166,32 @@ const char* html_page = R"rawliteral(
 </body>
 </html>
 )rawliteral";
+
+static String ndjsonToJsonArray(const char* path, size_t limit = 0) {
+  File f = LittleFS.open(path, FILE_READ);
+  String out = "[";
+  if (!f) { out += "]"; return out; }
+
+  StaticJsonDocument<1024> doc;
+  bool first = true;
+  while (f.available()) {
+    String line = f.readStringUntil('\n');
+    if (line.isEmpty()) continue;
+    doc.clear();
+    DeserializationError err = deserializeJson(doc, line);
+    if (err) continue;
+
+    if (!first) out += ","; else first = false;
+    String tmp; serializeJson(doc, tmp);
+    out += tmp;
+
+    if (limit && !--limit) break;
+  }
+  f.close();
+  out += "]";
+  Serial.println("njsontoarray: " + out);
+  return out;
+}
 
 void handleRoot() {
   server.send(200, "text/html", html_page);
@@ -254,50 +284,223 @@ void handleResetConfig() {
   server.send(200, "application/json", "{\"message\":\"Configuration reset to defaults!\"}");
 }
 
+static bool sendBytesAsFile(const String& filename, const uint8_t* data, size_t len) {
+  WiFiClient client = server.client();
+  String hdr = "HTTP/1.1 200 OK\r\n";
+  hdr += "Content-Type: application/octet-stream\r\n";
+  hdr += "Content-Disposition: attachment; filename=\"" + filename + "\"\r\n";
+  hdr += "Content-Length: " + String(len) + "\r\n\r\n";
+  client.print(hdr);
+  size_t sent = client.write(data, len);
+  return sent == len;
+}
+
+static void handleDownloadPacket() {
+  if (!server.hasArg("id")) {
+    server.send(400, "text/plain", "missing id");
+    return;
+  }
+  const String wantId = server.arg("id");
+
+  File f = LittleFS.open(PK_TBL, FILE_READ);
+  if (!f) { server.send(404, "text/plain", "packets table not found"); return; }
+
+  StaticJsonDocument<4096> doc;  // aumenta se i record hanno b64 grandi
+  bool served = false;
+
+  while (f.available()) {
+    String line = f.readStringUntil('\n');
+    if (line.isEmpty()) continue;
+    doc.clear();
+    if (deserializeJson(doc, line)) continue;
+
+    // id come stringa (qualsiasi tipo nel JSON)
+    String idStr;
+    if (doc["id"].is<const char*>()) idStr = String((const char*)doc["id"]);
+    else if (doc["id"].is<long>())   idStr = String((long)doc["id"]);
+    else if (doc["id"].is<unsigned long>()) idStr = String((unsigned long)doc["id"]);
+    else if (doc["id"].is<int>())    idStr = String((int)doc["id"]);
+    else if (doc["id"].is<uint32_t>()) idStr = String((uint32_t)doc["id"]);
+
+    if (idStr != wantId) continue;
+
+    // Caso 1: contenuto inline base64
+    if (doc.containsKey("hc22000_b64")) {
+      String b64 = doc["hc22000_b64"].as<String>();
+      size_t needed = 0;
+      // calcola lunghezza decodificata
+      int rc = mbedtls_base64_decode(nullptr, 0, &needed,
+                                     (const unsigned char*)b64.c_str(), b64.length());
+      if (rc != MBEDTLS_ERR_BASE64_BUFFER_TOO_SMALL && rc != 0) {
+        server.send(500, "text/plain", "base64 length error");
+        break;
+      }
+      std::unique_ptr<uint8_t[]> buf(new (std::nothrow) uint8_t[needed]);
+      if (!buf) { server.send(500, "text/plain", "oom"); break; }
+
+      size_t outLen = 0;
+      rc = mbedtls_base64_decode(buf.get(), needed, &outLen,
+                                 (const unsigned char*)b64.c_str(), b64.length());
+      if (rc != 0) { server.send(500, "text/plain", "base64 decode error"); break; }
+
+      const String fname = "packet_" + idStr + ".hc22000";
+      served = sendBytesAsFile(fname, buf.get(), outLen);
+      break;
+    }
+
+    // Caso 2: path file su LittleFS
+    if (doc.containsKey("file")) {
+      String p = doc["file"].as<String>();
+      if (!LittleFS.exists(p)) { server.send(404, "text/plain", "file not found"); break; }
+
+      File pf = LittleFS.open(p, FILE_READ);
+      if (!pf) { server.send(500, "text/plain", "cannot open file"); break; }
+
+      WiFiClient client = server.client();
+      const String fname = (p.endsWith(".hc22000") ? p.substring(p.lastIndexOf('/')+1)
+                                                   : "packet_"+idStr+".hc22000");
+      String hdr = "HTTP/1.1 200 OK\r\n";
+      hdr += "Content-Type: application/octet-stream\r\n";
+      hdr += "Content-Disposition: attachment; filename=\"" + fname + "\"\r\n";
+      hdr += "Content-Length: " + String(pf.size()) + "\r\n\r\n";
+      client.print(hdr);
+
+      uint8_t buf[1024];
+      while (pf.available()) {
+        size_t r = pf.read(buf, sizeof(buf));
+        if (!r) break;
+        client.write(buf, r);
+      }
+      pf.close();
+      served = true;
+      break;
+    }
+
+    server.send(415, "text/plain", "no hc22000 content in record");
+    break;
+  }
+
+  f.close();
+  if (!served && server.client().connected()) {
+    server.send(404, "text/plain", "packet id not found");
+  }
+}
+
+static void handleFriendsPage() {
+  String html = String(HTML_LIST_TPL);
+  html.replace("%TITLE%", "Friends");
+  server.send(200, "text/html", html);
+}
+
+static void handlePacketsPage() {
+  String html = String(HTML_LIST_TPL);
+  html.replace("%TITLE%", "Packets");
+  server.send(200, "text/html", html);
+}
+
+static void handleApiFriends() {
+  server.send(200, "application/json", ndjsonToJsonArray(FR_TBL));
+}
+
+static void handleApiPackets() {
+  server.send(200, "application/json", ndjsonToJsonArray(PK_TBL));
+}
+
 void initAPConfig() {
   server.on("/", handleRoot);
+  server.on("/friends", HTTP_GET, handleFriendsPage);
+  server.on("/packets", HTTP_GET, handlePacketsPage);
+
   server.on("/api/config", handleGetConfig);
   server.on("/api/save", HTTP_POST, handleSaveConfig);
   server.on("/api/reset", HTTP_POST, handleResetConfig);
+  server.on("/api/friends", HTTP_GET, handleApiFriends);
+  server.on("/api/packets", HTTP_GET, handleApiPackets);
+  server.on("/api/packet/download", HTTP_GET, handleDownloadPacket);
+}
+
+static bool saneApCreds(const char* ssid, const char* pass) {
+  size_t ls = ssid ? strlen(ssid) : 0;
+  size_t lp = pass ? strlen(pass) : 0;
+  if (ls == 0 || ls > 32) { Serial.println("AP SSID invalid length"); return false; }
+  if (lp != 0 && (lp < 8 || lp > 63)) { Serial.println("AP password invalid length"); return false; }
+  return true;
 }
 
 void startAPMode() {
   Serial.println("AP Mode - Starting...");
   if (ap_mode_active) return;
-  
-  // Stop promiscuous mode and station mode
+
+  // Stop tutto
   Serial.println("Stop promiscuous mode and station mode");
-
-  // CRITICAL: Stop promiscuous mode first
   esp_wifi_set_promiscuous(false);
-  delay(100);  // Give it time to stop
+  WiFi.persistent(false);
+  WiFi.disconnect(true, true);  // drop STA + forget creds
+  delay(50);
+  WiFi.mode(WIFI_OFF);
+  delay(50);
 
-  // Now start AP mode
-  Serial.println("WiFi.mode(WIFI_AP)");
-  WiFi.mode(WIFI_AP);
-  delay(100);
+  Serial.printf("Free heap before AP: %u\n", ESP.getFreeHeap());
 
-  // Start Access Point
-  Serial.println("Start Soft Access Point");
-  bool ap_success = WiFi.softAP(AP_SSID, AP_PASSWORD);
-
-  if (ap_success) {
-    Serial.println("SoftAP started successfully.");
-    
-    IPAddress IP = WiFi.softAPIP();
-    Serial.print("AP IP address: ");
-    Serial.println(IP);
-    
-    server.begin();
-    ap_mode_active = true;
-    ap_start_time = millis();
-    Serial.println("AP Mode - Started.");
-  } else {
-      Serial.println("ERROR: Failed to start AP mode!");
-      // Optionally: try to restart WiFi in station mode
-      ap_mode_active = false;
+  if (!saneApCreds(AP_SSID, AP_PASSWORD)) {
+    Serial.println("ERROR: SSID/PASS not valid");
+    return;
   }
+
+  WiFi.mode(WIFI_AP);
+  delay(50);
+
+  // Opzionale: IP della SoftAP (se vuoi uno specifico)
+  // WiFi.softAPConfig(IPAddress(192,168,4,1), IPAddress(192,168,4,1), IPAddress(255,255,255,0));
+
+  Serial.println("Start Soft Access Point");
+  const int channel = 1;    // evita DFS e canali dubbi
+  const bool hidden = false;
+  const int max_conn = 4;
+
+  bool ap_success = WiFi.softAP(AP_SSID, AP_PASSWORD, channel, hidden, max_conn);
+
+  if (!ap_success) {
+    Serial.println("Arduino softAP() returned false. Provo a ottenere l'errore basso livello...");
+
+    // Prova con API native per loggare l'err (opzionale)
+    wifi_config_t cfg{};
+    strlcpy((char*)cfg.ap.ssid, AP_SSID, sizeof(cfg.ap.ssid));
+    cfg.ap.ssid_len = strlen(AP_SSID);
+    if (AP_PASSWORD && strlen(AP_PASSWORD) >= 8) {
+      strlcpy((char*)cfg.ap.password, AP_PASSWORD, sizeof(cfg.ap.password));
+      cfg.ap.authmode = WIFI_AUTH_WPA2_PSK; // semplice & supportato
+    } else {
+      cfg.ap.authmode = WIFI_AUTH_OPEN;
+    }
+    cfg.ap.channel = channel;
+    cfg.ap.max_connection = max_conn;
+
+    esp_err_t e;
+    e = esp_wifi_set_mode(WIFI_MODE_AP);
+    if (e) Serial.printf("esp_wifi_set_mode: %s\n", esp_err_to_name(e));
+    e = esp_wifi_set_config(WIFI_IF_AP, &cfg);
+    if (e) Serial.printf("esp_wifi_set_config: %s\n", esp_err_to_name(e));
+    e = esp_wifi_start();
+    if (e) {
+      Serial.printf("[LOW] esp_wifi_start: %s\n", esp_err_to_name(e));
+      Serial.println("ERROR: Failed to start AP mode!");
+      ap_mode_active = false;
+      return;
+    } else {
+      Serial.println("SoftAP started via native API.");
+    }
+  }
+
+  IPAddress IP = WiFi.softAPIP();
+  Serial.print("AP IP address: "); Serial.println(IP);
+
+  server.begin();
+  ap_mode_active = true;
+  ap_start_time = millis();
+  Serial.println("AP Mode - Started.");
 }
+
 
 void stopAPMode() {
   if (!ap_mode_active) return;
@@ -330,3 +533,6 @@ bool shouldExitAPMode() {
   // Check if AP mode was stopped (e.g., due to timeout)
   return !ap_mode_active;
 }
+
+
+

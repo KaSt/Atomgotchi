@@ -10,8 +10,25 @@ String pwngrid_last_friend_name = "";
 uint8_t pwngrid_pwned_tot;
 uint8_t pwngrid_pwned_run;
 
+String fullPacket = "";
+
 DeviceConfig *config = getConfig();
 
+String reverse(const char * original) {
+  String reverse = "";
+  int str_len = String(original).length();
+
+  if(str_len > 0 && original != NULL)
+  {
+    for(int i = 0 ; i < str_len ; ++i)
+    {
+      reverse.concat(original[str_len - i - 2]);
+    }
+
+    //reverse[size - 1] = '\0';
+  }
+  return reverse;
+}
 
 // helper: format MAC -> string
 void MAC2str(const uint8_t mac[6], char *out /*18 bytes*/) {
@@ -87,7 +104,7 @@ void enqueue_friend_from_sniffer(pwngrid_peer a_friend) {
     Serial.println("Failed enqueuing friend");
     return;
   }
-  Serial.println("Friend added to queue");
+  //Serial.println("Friend added to queue: " + a_friend.name);
 }
 
 uint8_t getPwngridTotalPeers() {
@@ -231,13 +248,13 @@ void pwngridAddPeer(DynamicJsonDocument &json, signed int rssi, int channel) {
 
   pwngrid_last_friend_name = pwngrid_peers[pwngrid_friends_tot].name;
 
-  pwngrid_friends_run++;
-  pwngrid_friends_tot++;
-
   enqueue_friend_from_sniffer(pwngrid_peers[pwngrid_friends_tot]);
 
   EEPROM.write(0, pwngrid_friends_tot);
   EEPROM.commit();
+
+  pwngrid_friends_run++;
+  pwngrid_friends_tot++;
 }
 
 const int away_threshold = 120000;
@@ -507,49 +524,114 @@ void pwnSnifferCallback(void *buf, wifi_promiscuous_pkt_type_t type) {
       (wifi_ieee80211_packet_t *)snifferPacket->payload;
     const WifiMgmtHdr *hdr = &ipkt->hdr;
 
-    //Check if we do something about EAPOLs
+    //Check if we do something about EAPOLs or PMKIDs
     if (config->personality == PASSIVE || config->personality == AGGRESSIVE) {
       handlePacket(snifferPacket);
     }
 
-    // if ((snifferPacket->payload[0] == 0x80) && (buf == 0)) {
     if ((snifferPacket->payload[0] == 0x80)) {
+      // Beacon frame
+      // Get source MAC
       char addr[] = "00:00:00:00:00:00";
       getMAC(addr, snifferPacket->payload, 10);
       src.concat(addr);
+
       if (src == "de:ad:be:ef:de:ad") {
-        // Just grab the first 255 bytes of the pwnagotchi beacon
-        // because that is where the name is
-        for (int i = 38; i < len; i++) {
-          if (isAscii(snifferPacket->payload[i])) {
-            essid.concat((char)snifferPacket->payload[i]);
+        // compute payload length robustly
+        int raw_len = snifferPacket->rx_ctrl.sig_len;
+        // avoid negative or insane lengths
+        int len = raw_len - 4;  // ✓ Match the logic at the top
+        if (len < 0 || len > 4096) {
+            Serial.println("Invalid packet length");
+            return;
+        }
+
+        // pointer to payload start
+        const uint8_t* p = (const uint8_t*)snifferPacket->payload;
+
+        // 802.11 Beacon layout (simplified):
+        // - MAC header: 24 bytes (but can be 30 with QoS/Addr4 etc). We use hdr->... earlier; continue safe scanning.
+        // Heuristic: tagged parameters usually start after the fixed beacon fields (timestamp 8 + beacon interval 2 + capability 2),
+        // so offset = header_len + 12
+        int hdr_len = 24; // typical management header length
+        // if RTS/addr4 or other flags present, hdr_len could differ; use value from snifferPacket if available
+        // We'll try safe offset: 24 + 12 = 36
+        int tagged_offset = 36;
+        if (tagged_offset >= len) {
+          // nothing to parse
+          return;
+        }
+
+        // Scan IEs
+        int i = tagged_offset;
+        while (i + 2 <= len - 1) { // need at least id + length
+          uint8_t ie_id = p[i];
+          uint8_t ie_len = p[i + 1];
+
+          // sanity check bounds
+          if (i + 2 + ie_len > len) {
+            // malformed IE, stop scanning
+            Serial.printf("IE parse out of bounds: i=%d ie_id=%u ie_len=%u len=%d\n", i, ie_id, ie_len, len);
+            break;
           }
-        }
 
-        DynamicJsonDocument sniffed_json(2048);  // ArduinoJson v6s
-        ArduinoJson::V6215PB2::DeserializationError result =
-          deserializeJson(sniffed_json, essid);
+          // Extract payload bytes exactly (no isAscii filter)
+          String ie_data;
+          ie_data.reserve(ie_len + 1);
+          for (int k = 0; k < ie_len; ++k) {
+            ie_data += (char)p[i + 2 + k];
+          }
 
-        if (result == ArduinoJson::V6215PB2::DeserializationError::Ok) {
-          // Serial.println("\nSuccessfully parsed json");
-          // serializeJson(json, Serial);  // ArduinoJson v6
-          pwngridAddPeer(sniffed_json, snifferPacket->rx_ctrl.rssi, snifferPacket->rx_ctrl.channel);
-        } else if (result == ArduinoJson::V6215PB2::DeserializationError::IncompleteInput) {
-          Serial.println("Deserialization error: incomplete input");
-        } else if (result == ArduinoJson::V6215PB2::DeserializationError::NoMemory) {
-          Serial.println("Deserialization error: no memory");
-        } else if (result == ArduinoJson::V6215PB2::DeserializationError::InvalidInput) {
-          Serial.println("Deserialization error: invalid input");
-        } else if (result == ArduinoJson::V6215PB2::DeserializationError::TooDeep) {
-          Serial.println("Deserialization error: too deep");
-        } else {
-          Serial.println(essid);
-          Serial.println("Deserialization error");
-        }
+          String packet = "";
+          
+          packet.concat(ie_data);
+          if (packet.indexOf('{') == 0) {
+              // Start of NEW JSON
+              Serial.println("Start of Advertise packet: " + packet);
+              fullPacket = packet;
+              
+              // Check if it's also complete in one IE (small JSON)
+              if (packet.length() > 0 && packet[packet.length() - 1] == '}') {
+                  Serial.println("Complete JSON in single IE!");
+                  const size_t DOC_SIZE = 4096;
+                  DynamicJsonDocument sniffed_json(DOC_SIZE);
+                  DeserializationError result = deserializeJson(sniffed_json, fullPacket.c_str());
+                  if (result == DeserializationError::Ok) {
+                      sniffed_json["rssi"] = snifferPacket->rx_ctrl.rssi;
+                      sniffed_json["channel"] = snifferPacket->rx_ctrl.channel;
+                      pwngridAddPeer(sniffed_json, snifferPacket->rx_ctrl.rssi, snifferPacket->rx_ctrl.channel);
+                  } else {
+                      Serial.print("JSON parse error: ");
+                      Serial.println(result.c_str());
+                  }
+                  fullPacket = "";
+              }
+          } else if (fullPacket.length() > 0) {
+              // Continuation of existing JSON
+              fullPacket.concat(packet);
+              if (packet.length() > 0 && packet[packet.length() - 1] == '}') {
+                  Serial.println("Complete JSON: " + fullPacket);
+                  
+                  const size_t DOC_SIZE = 4096;
+                  DynamicJsonDocument sniffed_json(DOC_SIZE);
+                  DeserializationError result = deserializeJson(sniffed_json, fullPacket.c_str());
+                  if (result == DeserializationError::Ok) {
+                      sniffed_json["rssi"] = snifferPacket->rx_ctrl.rssi;
+                      sniffed_json["channel"] = snifferPacket->rx_ctrl.channel;
+                      pwngridAddPeer(sniffed_json, snifferPacket->rx_ctrl.rssi, snifferPacket->rx_ctrl.channel);
+                  } else {
+                      Serial.print("JSON parse error: ");
+                      Serial.println(result.c_str());
+                  }
+                  fullPacket = "";
+              }
+          } //next IE
+          i += 2 + ie_len;
+        } // end IE scan
       }
     }
-  }
   //Serial.println("pwnSnifferCallback done.");
+  }
 }
 
 const wifi_promiscuous_filter_t filter = {

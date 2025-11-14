@@ -269,8 +269,8 @@ void drawTopCanvas(int channel) {
   canvas_top.setTextDatum(top_left);
 
   char top_text[25] = "CH * [F]";
-
-  snprintf(top_text, sizeof(top_text), "CH * [%s]", (getPersonalityText()).c_str());
+  String channel_text = String(channel).length() < 2 ? String("0") + String(channel): String(channel);
+  snprintf(top_text, sizeof(top_text), "CH %s [%s]", channel_text, (getPersonalityText()).c_str());
   canvas_top.drawString(top_text, 0, 3);
   canvas_top.setTextDatum(top_right);
   unsigned long ellapsed = millis() / 1000;

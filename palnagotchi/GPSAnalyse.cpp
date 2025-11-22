@@ -3,16 +3,58 @@
 
 GPSAnalyse::GPSAnalyse() {
     _GPS_Str.clear();
+    _isRunning = false;
+    _isInitialized = false;
+    _lastDataTime = 0;
+    _serial = nullptr;
 }
 
+bool GPSAnalyse::begin(int rxPin, int txPin, unsigned long baud) {
+    Serial.printf("GPS: Attempting to initialize on RX=%d, TX=%d, baud=%lu\n", rxPin, txPin, baud);
+    
+    // Try to initialize Serial1 with specified pins
+    Serial1.begin(baud, SERIAL_8N1, rxPin, txPin);
+    delay(100);
+    
+    // Check if we're receiving any data
+    unsigned long startTime = millis();
+    bool dataReceived = false;
+    
+    while (millis() - startTime < 3000) {  // Wait up to 3 seconds
+        if (Serial1.available()) {
+            dataReceived = true;
+            Serial.println("GPS: Data detected!");
+            break;
+        }
+        delay(50);
+    }
+    
+    if (!dataReceived) {
+        Serial.println("GPS: No data received - GPS may not be connected");
+        Serial1.end();
+        return false;
+    }
+    
+    // GPS is present, set it up
+    setSerialPtr(Serial1);
+    _isInitialized = true;
+    Serial.println("GPS: Initialized successfully");
+    return true;
+}
 
 void GPSAnalyse::setSerialPtr(HardwareSerial &serial) {
     _serial = &serial;
-    _xSemaphore = xSemaphoreCreateMutex();
+    if (_xSemaphore == NULL) {
+        _xSemaphore = xSemaphoreCreateMutex();
+    }
 }
 
 GPSAnalyse::~GPSAnalyse() {
-
+    stop();
+    if (_xSemaphore != NULL) {
+        vSemaphoreDelete(_xSemaphore);
+        _xSemaphore = NULL;
+    }
 }
 
 void GPSAnalyse::taskTrampoline(void *param) {
@@ -24,39 +66,83 @@ void GPSAnalyse::taskTrampoline(void *param) {
 }
 
 void GPSAnalyse::start() {
-    xTaskCreatePinnedToCore(GPSAnalyse::taskTrampoline, "run", 4096, this, 1, NULL, 1);
+    if (_isRunning || !_isInitialized || _serial == nullptr) {
+        Serial.println("GPS: Cannot start - not initialized or already running");
+        return;
+    }
+    
+    _isRunning = true;
+    xTaskCreatePinnedToCore(GPSAnalyse::taskTrampoline, "GPSTask", 4096, this, 1, NULL, 1);
+    Serial.println("GPS: Task started");
+}
+
+void GPSAnalyse::stop() {
+    _isRunning = false;
+    delay(100);  // Give task time to exit
+}
+
+bool GPSAnalyse::isConnected() {
+    if (!_isInitialized || _serial == nullptr) {
+        return false;
+    }
+    
+    // Check if we've received data recently (within last 5 seconds)
+    return (millis() - _lastDataTime) < 5000;
+}
+
+bool GPSAnalyse::hasValidFix() {
+    if (!isConnected()) {
+        return false;
+    }
+    
+    // Check if we have a valid fix (State == 'A' means active/valid)
+    return (s_GNRMC.State == 'A');
 }
 
 void GPSAnalyse::run(void *data)
 {
-    GPSReadBuff = (char*)calloc(1024,sizeof(char));
-    Serial.println("GPS Task");
-    while (1)
+    GPSReadBuff = (char*)calloc(1024, sizeof(char));
+    Serial.println("GPS: Task running");
+    
+    while (_isRunning)
     {
-        if (_serial->available())
+        if (_serial != nullptr && _serial->available())
         {
+            _lastDataTime = millis();
             
-            memset(GPSReadBuff, 1024, sizeof(char));
-            _serial->readBytes(GPSReadBuff, _serial->available());
-            _GPS_Str.concat(GPSReadBuff);
-            xSemaphoreTake(_xSemaphore, portMAX_DELAY);
-            Analyse();
-            xSemaphoreGive(_xSemaphore);
+            memset(GPSReadBuff, 0, 1024);
+            int bytesRead = _serial->readBytes(GPSReadBuff, _serial->available());
+            
+            if (bytesRead > 0) {
+                _GPS_Str.concat(GPSReadBuff);
+                
+                if (_xSemaphore != NULL) {
+                    xSemaphoreTake(_xSemaphore, portMAX_DELAY);
+                    Analyse();
+                    xSemaphoreGive(_xSemaphore);
+                }
+            }
             delay(1);
         }
         else
         {
-            delay(5);
+            delay(50);
         }
     }
+    
+    free(GPSReadBuff);
+    Serial.println("GPS: Task stopped");
+    vTaskDelete(NULL);
 }
 
 void GPSAnalyse::upDate()
 {
+    if (_xSemaphore == NULL) return;
+    
     xSemaphoreTake(_xSemaphore, portMAX_DELAY);
-    memcpy(&s_GNRMC,&_s_GNRMC,sizeof(GNRMC_t));
-    memcpy(&s_GNGAS,&_s_GNGAS,sizeof(GNGSA_t));
-    memcpy(&s_GPGSV,&_s_GPGSV,sizeof(GPGSV_t));
+    memcpy(&s_GNRMC, &_s_GNRMC, sizeof(GNRMC_t));
+    memcpy(&s_GNGAS, &_s_GNGAS, sizeof(GNGSA_t));
+    memcpy(&s_GPGSV, &_s_GPGSV, sizeof(GPGSV_t));
     xSemaphoreGive(_xSemaphore);
 }
 

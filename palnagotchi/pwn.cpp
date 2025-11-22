@@ -264,15 +264,35 @@ void pwngridAddPeer(DynamicJsonDocument &json, signed int rssi, int channel) {
     pwngrid_last_friend_name = peer.name;
     Serial.println("pwngrid_last_friend_name: " + pwngrid_last_friend_name);
 
+    // Add GPS coordinates if available
+    if (hasGPS && GPS.isConnected() && GPS.hasValidFix()) {
+        GPS.upDate();
+        peer.latitude = GPS.s_GNRMC.Latitude;
+        peer.longitude = GPS.s_GNRMC.Longitude;
+        peer.has_gps = true;
+        
+        // Convert to proper format based on hemisphere
+        if (GPS.s_GNRMC.LatitudeMark == 'S') {
+            peer.latitude = -peer.latitude;
+        }
+        if (GPS.s_GNRMC.LongitudeMark == 'W') {
+            peer.longitude = -peer.longitude;
+        }
+        
+        Serial.printf("📍 Spotted %s at: Lat=%.6f, Lon=%.6f (Fix: %c)\n",
+                     peer.name.c_str(), peer.latitude, peer.longitude, GPS.s_GNRMC.State);
+    } else {
+        peer.has_gps = false;
+        if (hasGPS && !GPS.isConnected()) {
+            Serial.println("⚠️  GPS not connected - no coordinates saved");
+        } else if (hasGPS && !GPS.hasValidFix()) {
+            Serial.println("⚠️  GPS has no fix - waiting for satellites...");
+        }
+    }
+
     enqueue_friend_from_sniffer(peer);
     pwngrid_friends_run++;
     saveStats();
-
-    if (hasGPS) {
-        GPS.upDate();
-        Serial.printf("Just spotted %s at: Lat=%.5f Lon=%.5f\n",
-                     peer.name.c_str(), GPS.s_GNRMC.Latitude, GPS.s_GNRMC.Longitude);
-    }
 }
 
 
@@ -757,15 +777,55 @@ void initPwning() {
     initDB();
     initDBWorkers();
 
-    // Initialize GPS if available
-    try {
-        GPS.setSerialPtr(Serial1);
-        GPS.start();
-        hasGPS = true;
-        Serial.println("GPS initialised succesfully.");
-    } catch (...) {
-        Serial.println("Error initialising GPS");
-        hasGPS = false;
+    // Initialize GPS with device-specific pins
+    // M5Stack GPS modules typically use Grove port or Hat connector
+    hasGPS = false;
+    
+    #if defined(ARDUINO_M5STACK_STICKC) || defined(ARDUINO_M5STACK_STICKC_PLUS) || defined(ARDUINO_M5STACK_STICKC_PLUS2)
+        // M5StickC/Plus: Grove port (G32=RX, G33=TX) or Hat (G0=RX, G26=TX)
+        // Try Grove port first (most common for GPS Hat)
+        Serial.println("GPS: Trying StickC Grove port (G32/G33)");
+        if (GPS.begin(32, 33, 9600)) {
+            GPS.start();
+            hasGPS = true;
+            Serial.println("GPS: Initialized on Grove port");
+        } else {
+            // Try Hat connector
+            Serial.println("GPS: Trying StickC Hat port (G0/G26)");
+            if (GPS.begin(0, 26, 9600)) {
+                GPS.start();
+                hasGPS = true;
+                Serial.println("GPS: Initialized on Hat port");
+            }
+        }
+    #elif defined(ARDUINO_M5STACK_ATOMS3)
+        // AtomS3: Atomic GPS Base uses Grove (G2=RX, G1=TX)
+        Serial.println("GPS: Trying AtomS3 Grove port (G2/G1)");
+        if (GPS.begin(2, 1, 9600)) {
+            GPS.start();
+            hasGPS = true;
+            Serial.println("GPS: Initialized on AtomS3 Grove");
+        }
+    #elif defined(ARDUINO_M5STACK_CARDPUTER)
+        // Cardputer: Grove port A (G1=RX, G2=TX)
+        Serial.println("GPS: Trying Cardputer Grove A (G1/G2)");
+        if (GPS.begin(1, 2, 9600)) {
+            GPS.start();
+            hasGPS = true;
+            Serial.println("GPS: Initialized on Cardputer Grove A");
+        }
+    #else
+        // Generic ESP32: Try common pins
+        Serial.println("GPS: Trying generic pins (G16/G17)");
+        if (GPS.begin(16, 17, 9600)) {
+            GPS.start();
+            hasGPS = true;
+            Serial.println("GPS: Initialized on generic pins");
+        }
+    #endif
+    
+    if (!hasGPS) {
+        Serial.println("GPS: No GPS module detected - continuing without GPS");
     }
 
     auto id = ensurePwnIdentity(true);
@@ -854,6 +914,39 @@ void performDeauthCycle() {
     }
 
     esp_wifi_set_channel(originalChannel, WIFI_SECOND_CHAN_NONE);
+}
+
+// ========== GPS Functions ==========
+bool hasGPSModule() {
+    return hasGPS;
+}
+
+bool isGPSConnected() {
+    return hasGPS && GPS.isConnected();
+}
+
+bool hasGPSFix() {
+    return hasGPS && GPS.isConnected() && GPS.hasValidFix();
+}
+
+void getGPSCoordinates(double &lat, double &lon) {
+    if (!hasGPSFix()) {
+        lat = 0.0;
+        lon = 0.0;
+        return;
+    }
+    
+    GPS.upDate();
+    lat = GPS.s_GNRMC.Latitude;
+    lon = GPS.s_GNRMC.Longitude;
+    
+    // Apply hemisphere corrections
+    if (GPS.s_GNRMC.LatitudeMark == 'S') {
+        lat = -lat;
+    }
+    if (GPS.s_GNRMC.LongitudeMark == 'W') {
+        lon = -lon;
+    }
 }
 
 Environment &getEnv() {

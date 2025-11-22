@@ -17,7 +17,7 @@ bool addFriend(pwngrid_peer newFriend) {
     Serial.println("addFriend: Error opening FR_TBL");
     return false;
   }
-  StaticJsonDocument<256> friendJSON;
+  StaticJsonDocument<384> friendJSON;  // Increased for GPS data
   friendJSON["epoch"] = newFriend.epoch;
   friendJSON["face"] = newFriend.face;
   friendJSON["grid_version"] = newFriend.grid_version;
@@ -31,12 +31,21 @@ bool addFriend(pwngrid_peer newFriend) {
   friendJSON["last_ping"] = newFriend.last_ping;
   friendJSON["gone"] = newFriend.gone;
   friendJSON["channel"] = newFriend.channel;
+  
+  // Save GPS coordinates if available
+  if (newFriend.has_gps) {
+    friendJSON["latitude"] = newFriend.latitude;
+    friendJSON["longitude"] = newFriend.longitude;
+    friendJSON["has_gps"] = true;
+  } else {
+    friendJSON["has_gps"] = false;
+  }
 
   serializeJson(friendJSON, f);
   f.write('\n');
   f.flush();  
   f.close();
-  Serial.println("Friend added to DB");
+  Serial.println("Friend added to DB" + String(newFriend.has_gps ? " (with GPS)" : ""));
   return true;
 }
 
@@ -112,7 +121,7 @@ Serial.println(String("Checking Friend name: ") + nf.name);
     }
     out2.seek(out2.size()); 
 
-    StaticJsonDocument<256> friendJSON;
+    StaticJsonDocument<384> friendJSON;  // Increased for GPS data
     friendJSON["epoch"]        = nf.epoch;
     friendJSON["face"]         = nf.face;
     friendJSON["grid_version"] = nf.grid_version;
@@ -126,6 +135,15 @@ Serial.println(String("Checking Friend name: ") + nf.name);
     friendJSON["last_ping"]    = nf.last_ping;
     friendJSON["gone"]         = nf.gone;
     friendJSON["channel"]      = nf.channel;
+    
+    // Save GPS coordinates if available
+    if (nf.has_gps) {
+      friendJSON["latitude"]   = nf.latitude;
+      friendJSON["longitude"]  = nf.longitude;
+      friendJSON["has_gps"]    = true;
+    } else {
+      friendJSON["has_gps"]    = false;
+    }
 
     serializeJson(friendJSON, out2);
     out2.write('\n');

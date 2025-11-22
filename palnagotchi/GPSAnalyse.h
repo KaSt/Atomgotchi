@@ -82,6 +82,9 @@ private:
     HardwareSerial *_serial;
     SemaphoreHandle_t _xSemaphore = NULL;
     char *GPSReadBuff;
+    bool _isRunning;
+    bool _isInitialized;
+    unsigned long _lastDataTime;
 
     void Analyse();
 
@@ -98,9 +101,13 @@ private:
 public:
     GPSAnalyse();
     ~GPSAnalyse();
+    bool begin(int rxPin, int txPin, unsigned long baud = 9600);
     void setSerialPtr(HardwareSerial &serial);
     void upDate();
     void start();
+    void stop();
+    bool isConnected();
+    bool hasValidFix();
     
     static void taskTrampoline(void *param);    
 

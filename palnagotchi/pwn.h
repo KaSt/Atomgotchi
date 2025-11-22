@@ -49,6 +49,12 @@ uint64_t getPwngridTotalPwned();
 // Attack operations
 void performDeauthCycle();
 
+// GPS functions
+bool hasGPSModule();
+bool isGPSConnected();
+bool hasGPSFix();
+void getGPSCoordinates(double &lat, double &lon);
+
 // Environment
 Environment &getEnv();
 

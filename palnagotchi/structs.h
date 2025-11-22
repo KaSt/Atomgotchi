@@ -17,6 +17,9 @@ typedef struct {
   int last_ping;
   bool gone;
   int channel;
+  double latitude;
+  double longitude;
+  bool has_gps;
 } pwngrid_peer;
 
 typedef struct {

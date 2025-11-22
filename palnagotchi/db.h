@@ -2,7 +2,7 @@
 #define _DB_H_
 
 #include "ArduinoJson.h"
-#include <LittleFS.h>
+#include "storage.h"
 #include "structs.h"
 
 void initDB();

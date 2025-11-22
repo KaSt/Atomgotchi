@@ -3,6 +3,7 @@
 #include "config.h"
 #include "ap_config.h"
 #include "menu_system.h"
+#include "storage.h"
 
 M5Canvas canvas_top(&M5.Display);
 M5Canvas canvas_main(&M5.Display);
@@ -27,6 +28,7 @@ MenuSystem* mainMenu = nullptr;
 MenuSystem* settingsMenu = nullptr;
 MenuSystem* nearbyMenu = nullptr;
 MenuSystem* personalityMenu = nullptr;
+MenuSystem* storageMenu = nullptr;
 MenuSystem* currentMenu = nullptr;
 
 enum MenuState {
@@ -94,9 +96,14 @@ void openSettingsMenu();
 void openAboutMenu();
 void openPersonalityMenu();
 void openAPConfigMenu();
+void openStorageMenu();
 void toggleNinjaMode();
 void setPersonalityFriendly();
 void setPersonalityAI();
+void formatSDCard();
+void switchToSDStorage();
+void switchToInternalStorage();
+void showStorageInfo();
 
 // Initialize all menus
 void initMenus() {
@@ -116,6 +123,10 @@ void initMenus() {
   personalityMenu->setTitle("PERSONALITY");
   personalityMenu->setColors(TFT_GREEN, TFT_DARKGREEN, TFT_BLACK, TFT_YELLOW);
   
+  storageMenu = new MenuSystem(&canvas_main);
+  storageMenu->setTitle("STORAGE");
+  storageMenu->setColors(TFT_GREEN, TFT_DARKGREEN, TFT_BLACK, TFT_YELLOW);
+  
   // Build main menu
   mainMenu->addItem("Friends", openFriendsMenu);
   mainMenu->addItem("Settings", openSettingsMenu);
@@ -125,6 +136,7 @@ void initMenus() {
   // Build settings menu
   settingsMenu->addItem("Config (AP)", openAPConfigMenu);
   settingsMenu->addItem("Personality", openPersonalityMenu);
+  settingsMenu->addItem("Storage", openStorageMenu);
   settingsMenu->addItem("Ninja Mode", toggleNinjaMode);
   settingsMenu->addBackItem(openMainMenu);
   
@@ -265,6 +277,180 @@ void setPersonalityAI() {
   delay(1000);
   
   openPersonalityMenu();
+}
+
+void openStorageMenu() {
+  activeMenuState = MENU_SETTINGS;  // Part of settings
+  
+  // Rebuild storage menu based on current state
+  storageMenu->clearItems();
+  
+  // Show current storage info
+  String currentInfo = String("Current: ") + storage.getStorageTypeName();
+  storageMenu->addItem(currentInfo, showStorageInfo);
+  
+  // SD card options
+  if (storage.isSDAvailable()) {
+    if (storage.isSDFormatted()) {
+      if (!storage.isSDActive()) {
+        storageMenu->addItem("Switch to SD", switchToSDStorage);
+      }
+      storageMenu->addItem("SD Card Info", showStorageInfo);
+    } else {
+      storageMenu->addItem("Format SD Card", formatSDCard);
+    }
+  } else {
+    storageMenu->addItem("No SD Card", [](){});  // Disabled
+  }
+  
+  // Internal storage option
+  if (storage.isSDActive()) {
+    storageMenu->addItem("Switch to Internal", switchToInternalStorage);
+  }
+  
+  storageMenu->addBackItem(openSettingsMenu);
+  currentMenu = storageMenu;
+}
+
+void showStorageInfo() {
+  canvas_main.fillSprite(TFT_BLACK);
+  canvas_main.setTextColor(TFT_YELLOW);
+  canvas_main.setTextSize(2);
+  canvas_main.setTextDatum(top_center);
+  canvas_main.drawString("STORAGE INFO", canvas_center_x, 5);
+  
+  canvas_main.setTextColor(TFT_GREEN);
+  canvas_main.setTextSize(1);
+  canvas_main.setTextDatum(top_left);
+  canvas_main.setCursor(10, 30);
+  
+  canvas_main.printf("Active: %s\n", storage.getStorageTypeName());
+  canvas_main.println();
+  
+  if (storage.isSDAvailable()) {
+    canvas_main.println("SD Card:");
+    canvas_main.printf("  Size: %llu MB\n", storage.getSDCardSize());
+    canvas_main.printf("  Used: %llu MB\n", storage.getSDCardUsed());
+    canvas_main.printf("  Free: %llu MB\n", storage.getSDCardFree());
+    canvas_main.printf("  Status: %s\n", storage.isSDFormatted() ? "OK" : "Not formatted");
+  } else {
+    canvas_main.println("SD Card: Not detected");
+  }
+  
+  canvas_main.setTextColor(TFT_DARKGREY);
+  canvas_main.setCursor(10, canvas_h - 15);
+  canvas_main.println("Hold button to go back");
+  
+  canvas_main.pushSprite(0, canvas_top_h);
+  
+  // Wait for button
+  delay(300);
+  while (!toggleMenuBtnPressed()) {
+    M5.update();
+    delay(10);
+  }
+  
+  openStorageMenu();
+}
+
+void formatSDCard() {
+  // Confirmation dialog
+  canvas_main.fillSprite(TFT_BLACK);
+  canvas_main.setTextColor(TFT_YELLOW);
+  canvas_main.setTextSize(2);
+  canvas_main.setTextDatum(middle_center);
+  canvas_main.drawString("FORMAT SD?", canvas_center_x, canvas_h / 3);
+  
+  canvas_main.setTextColor(TFT_RED);
+  canvas_main.setTextSize(1);
+  canvas_main.drawString("All data will be lost!", canvas_center_x, canvas_h / 2);
+  
+  canvas_main.setTextColor(TFT_GREEN);
+  canvas_main.drawString("Short press: Cancel", canvas_center_x, canvas_h - 30);
+  canvas_main.drawString("Long press: Format", canvas_center_x, canvas_h - 15);
+  
+  canvas_main.pushSprite(0, canvas_top_h);
+  
+  delay(500);  // Debounce
+  
+  // Wait for user input
+  unsigned long startWait = millis();
+  bool formatConfirmed = false;
+  
+  while (millis() - startWait < 10000) {  // 10 second timeout
+    M5.update();
+    
+    if (isNextPressed()) {
+      // Cancel
+      break;
+    }
+    
+    if (toggleMenuBtnPressed()) {
+      formatConfirmed = true;
+      break;
+    }
+    
+    delay(10);
+  }
+  
+  if (formatConfirmed) {
+    // Show formatting message
+    canvas_main.fillSprite(TFT_BLACK);
+    canvas_main.setTextColor(TFT_YELLOW);
+    canvas_main.setTextSize(2);
+    canvas_main.setTextDatum(middle_center);
+    canvas_main.drawString("Formatting...", canvas_center_x, canvas_h / 2);
+    canvas_main.pushSprite(0, canvas_top_h);
+    
+    bool success = storage.formatSD();
+    
+    // Show result
+    canvas_main.fillSprite(TFT_BLACK);
+    canvas_main.setTextColor(success ? TFT_GREEN : TFT_RED);
+    canvas_main.drawString(success ? "Success!" : "Failed!", canvas_center_x, canvas_h / 2);
+    canvas_main.pushSprite(0, canvas_top_h);
+    delay(2000);
+  }
+  
+  openStorageMenu();
+}
+
+void switchToSDStorage() {
+  canvas_main.fillSprite(TFT_BLACK);
+  canvas_main.setTextColor(TFT_YELLOW);
+  canvas_main.setTextSize(2);
+  canvas_main.setTextDatum(middle_center);
+  canvas_main.drawString("Switching...", canvas_center_x, canvas_h / 2);
+  canvas_main.pushSprite(0, canvas_top_h);
+  
+  bool success = storage.switchToSD();
+  
+  canvas_main.fillSprite(TFT_BLACK);
+  canvas_main.setTextColor(success ? TFT_GREEN : TFT_RED);
+  canvas_main.drawString(success ? "Using SD Card" : "Failed!", canvas_center_x, canvas_h / 2);
+  canvas_main.pushSprite(0, canvas_top_h);
+  delay(2000);
+  
+  openStorageMenu();
+}
+
+void switchToInternalStorage() {
+  canvas_main.fillSprite(TFT_BLACK);
+  canvas_main.setTextColor(TFT_YELLOW);
+  canvas_main.setTextSize(2);
+  canvas_main.setTextDatum(middle_center);
+  canvas_main.drawString("Switching...", canvas_center_x, canvas_h / 2);
+  canvas_main.pushSprite(0, canvas_top_h);
+  
+  bool success = storage.switchToLittleFS();
+  
+  canvas_main.fillSprite(TFT_BLACK);
+  canvas_main.setTextColor(success ? TFT_GREEN : TFT_RED);
+  canvas_main.drawString(success ? "Using Internal" : "Failed!", canvas_center_x, canvas_h / 2);
+  canvas_main.pushSprite(0, canvas_top_h);
+  delay(2000);
+  
+  openStorageMenu();
 }
 
 bool keyboard_changed = false;

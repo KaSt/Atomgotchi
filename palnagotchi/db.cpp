@@ -1,18 +1,22 @@
 #include "db.h"
+#include "storage.h"
 
 const char* FR_TBL = "/friends.ndjson";
 const char* PKT_TBL = "/packets.ndjson";  
 
 
 void initDB() {
-  if (!LittleFS.begin(true)) {
-    Serial.println("Rebooting to see if the FS is now ok");
+  // Storage manager handles LittleFS and SD initialization
+  if (!storage.begin()) {
+    Serial.println("Storage: Critical failure - rebooting");
     ESP.restart();
-  };
+  }
+  
+  Serial.printf("DB: Using %s for storage\n", storage.getStorageTypeName());
 }
 
 bool addFriend(pwngrid_peer newFriend) {
-  File f = LittleFS.open(FR_TBL, FILE_WRITE);
+  File f = storage.open(FR_TBL, FILE_WRITE);
   if (!f) {
     Serial.println("addFriend: Error opening FR_TBL");
     return false;
@@ -53,7 +57,7 @@ bool mergeFriend(const pwngrid_peer &nf, uint64_t &pwngrid_friends_tot) {
 
 Serial.println(String("Checking Friend name: ") + nf.name);
 
-  File in = LittleFS.open(FR_TBL, FILE_READ);
+  File in = storage.open(FR_TBL, FILE_READ);
   if (!in) {
     Serial.println("Not present in DB yet, calling addFriend for: " + nf.name);
     pwngrid_friends_tot++;
@@ -63,7 +67,7 @@ Serial.println(String("Checking Friend name: ") + nf.name);
   }
 
   String tmpPath = String(FR_TBL) + ".tmp";
-  File out = LittleFS.open(tmpPath.c_str(), FILE_WRITE);
+  File out = storage.open(tmpPath.c_str(), FILE_WRITE);
   if (!out) {
     Serial.println("mergeFriend: Error opening temp file");
     in.close();
@@ -113,10 +117,10 @@ Serial.println(String("Checking Friend name: ") + nf.name);
     // Add
     pwngrid_friends_tot++;
 
-    File out2 = LittleFS.open(tmpPath.c_str(), FILE_APPEND);
+    File out2 = storage.open(tmpPath.c_str(), FILE_APPEND);
     if (!out2) {
       Serial.println("mergeFriend: Error reopening temp for append");
-      LittleFS.remove(tmpPath.c_str());
+      storage.remove(tmpPath.c_str());
       return false;
     }
     out2.seek(out2.size()); 
@@ -151,11 +155,11 @@ Serial.println(String("Checking Friend name: ") + nf.name);
     out2.close();
   }
 
-  LittleFS.remove(FR_TBL);
-  if (!LittleFS.rename(tmpPath.c_str(), FR_TBL)) {
+  storage.remove(FR_TBL);
+  if (!storage.rename(tmpPath.c_str(), FR_TBL)) {
     Serial.println("mergeFriend: Error renaming temp to FR_TBL");
     // Try to cleanup
-    LittleFS.remove(tmpPath.c_str());
+    storage.remove(tmpPath.c_str());
     return false;
   }
 
@@ -176,7 +180,7 @@ typedef struct {
 */
 
 bool addPacket(packet_item_t packet) {
-  File f = LittleFS.open(PKT_TBL, FILE_WRITE);
+  File f = storage.open(PKT_TBL, FILE_WRITE);
   if (!f) {
     Serial.println("addPacket: Error opening PKT_TBL");
     return false;

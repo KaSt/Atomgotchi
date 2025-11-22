@@ -34,8 +34,8 @@ static uint64_t pwngrid_friends_tot = 0;
 static uint64_t pwngrid_friends_run = 0;
 static pwngrid_peer pwngrid_peers[255];
 static String pwngrid_last_friend_name = "";
-static uint8_t pwngrid_pwned_tot = 0;
-static uint8_t pwngrid_pwned_run = 0;
+static uint64_t pwngrid_pwned_tot = 0;
+static uint64_t pwngrid_pwned_run = 0;
 
 // Packet reassembly
 static String fullPacket = "";
@@ -141,12 +141,12 @@ void enqueue_friend_from_sniffer(pwngrid_peer &a_friend) {
 
 
 // ========== Pwngrid Getters ==========
-uint8_t getPwngridTotalPeers() { return pwngrid_friends_tot; }
-uint8_t getPwngridRunTotalPeers() { return pwngrid_friends_run; }
+uint64_t getPwngridTotalPeers() { return pwngrid_friends_tot; }
+uint64_t getPwngridRunTotalPeers() { return pwngrid_friends_run; }
 String getPwngridLastFriendName() { return pwngrid_last_friend_name; }
 pwngrid_peer *getPwngridPeers() { return pwngrid_peers; }
-uint8_t getPwngridTotalPwned() { return pwngrid_pwned_tot; }
-uint8_t getPwngridRunPwned() { return pwngrid_pwned_run; }
+uint64_t getPwngridTotalPwned() { return pwngrid_pwned_tot; }
+uint64_t getPwngridRunPwned() { return pwngrid_pwned_run; }
 
 signed int getPwngridClosestRssi() {
     signed int closest = -1000;

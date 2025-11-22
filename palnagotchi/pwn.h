@@ -38,13 +38,13 @@ void wifi_set_channel(int ch);
 void initPwning();
 esp_err_t pwngridAdvertise(uint8_t channel, String face);
 pwngrid_peer* getPwngridPeers();
-uint8_t getPwngridRunTotalPeers();
-uint8_t getPwngridTotalPeers();
+uint64_t getPwngridRunTotalPeers();
+uint64_t getPwngridTotalPeers();
 String getPwngridLastFriendName();
 signed int getPwngridClosestRssi();
 void checkPwngridGoneFriends();
-uint8_t getPwngridRunPwned();
-uint8_t getPwngridTotalPwned();
+uint64_t getPwngridRunPwned();
+uint64_t getPwngridTotalPwned();
 
 // Attack operations
 void performDeauthCycle();

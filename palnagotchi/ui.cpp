@@ -477,7 +477,7 @@ void drawNearbyMenu() {
   canvas_main.setTextColor(GREEN);
 
   pwngrid_peer* pwngrid_peers = getPwngridPeers();
-  uint8_t len = getPwngridRunTotalPeers();
+  uint64_t len = getPwngridRunTotalPeers();
 
   if (len == 0) {
     canvas_main.setTextColor(TFT_DARKGRAY);

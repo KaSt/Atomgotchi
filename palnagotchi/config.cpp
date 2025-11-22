@@ -10,8 +10,10 @@ static String s_identity;  // storage interno sicuro
 void initStats() {
   uint64_t friends_tot = 0;
   uint64_t pwned_tot = 0;
+  uint32_t epoch = 0;
   EEPROM.writeLong64(EEPROM_FRIENDS_START_ADDR, friends_tot);
   EEPROM.writeLong64(EEPROM_PWNED_START_ADDR, pwned_tot);
+  EEPROM.writeUInt(EEPROM_EPOCH_START_ADDR, epoch);
   EEPROM.commit();
 }
 
@@ -27,6 +29,15 @@ uint64_t getFriendsTot() {
 
 uint64_t getPwnedTot() {
   return EEPROM.readLong64(EEPROM_PWNED_START_ADDR);
+}
+
+void setEpoch(uint32_t _epoch) {
+  EEPROM.writeUInt(EEPROM_EPOCH_START_ADDR, _epoch);
+  EEPROM.commit();
+}
+
+uint32_t getEpoch() {
+  return EEPROM.readUInt(EEPROM_EPOCH_START_ADDR);
 }
 
 void initConfig() {

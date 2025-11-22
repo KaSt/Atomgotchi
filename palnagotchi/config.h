@@ -14,10 +14,7 @@
 
 // Personality
 #define FRIENDLY 0
-#define SNIFFER 1
-#ifdef I_CAN_BE_BAD
-#define AGGRESSIVE 2
-#endif
+#define AI 1
 
 // Configuration structure
 struct DeviceConfig {

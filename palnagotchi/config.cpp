@@ -94,14 +94,9 @@ int getPersonality() {
 String getPersonalityText() {
   String pers;
   switch (device_config.personality) {
-    case SNIFFER:
-      return "S";
-      break;
-#ifdef I_CAN_BE_BAD      
-    case AGGRESSIVE:
+    case AI:
       return "A";
       break;
-#endif      
     default:
       return "F";
       break;
@@ -111,15 +106,11 @@ String getPersonalityText() {
 void setPersonality(int personality) {
   Serial.println("Setting personality...");
   if (personality != FRIENDLY 
-                  && personality != SNIFFER 
-#ifdef I_CAN_BE_BAD                        
-                  && personality != AGGRESSIVE) {
-#else
-  ) {                  
-#endif
+                  && personality != AI) {
     Serial.println("Wrong Personality.");
     return;
   }
+  
   device_config.personality = personality;
   saveConfig();
   Serial.println("setPersonality done.");

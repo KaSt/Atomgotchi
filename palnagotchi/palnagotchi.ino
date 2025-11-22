@@ -12,6 +12,7 @@
 
 uint8_t state;
 unsigned long lastRun = 0;
+int lastPersonality = 0;
 
 void initM5() {
   auto cfg = M5.config();
@@ -29,13 +30,17 @@ void setup() {
   Serial.begin(115200);
   delay(1000); // Give serial time to initialize
   Serial.println("\n\n=== BOOT START ===");
+  randomSeed(esp_random());
   initM5();
   initConfig();
   initAPConfig();
   initMood();
   initPwning();
   initUi();
-  initBrain();
+  lastPersonality = getPersonality();
+  if (getPersonality() == AI ) {
+    startBrain();
+  }
   state = STATE_INIT;
 }
 
@@ -80,6 +85,20 @@ void loop() {
   //Serial.printf("Loop Begin\nFree heap: %d bytes\n", ESP.getFreeHeap());
   unsigned long now = millis();
 
+  int currentPersonality = getPersonality();
+  if (lastPersonality != currentPersonality) {
+    lastPersonality = currentPersonality;
+    switch (currentPersonality) {
+      case AI:
+        startBrain();
+        break;
+      
+      default:
+        stopBrain();
+        break;
+    }
+  }
+
   M5.update();
   #ifdef ARDUINO_M5STACK_CARDPUTER
     M5Cardputer.update();
@@ -111,12 +130,20 @@ void loop() {
     //Serial.println("Loop - STATE_WAKE");
     checkPwngridGoneFriends();
     if (now - lastRun >= 15000) {   // 15 000 ms = 15 s
+      //Serial.printf("Now: %d Last Run: %d Personality: %s\n", now, lastRun, getPersonalityText());
       lastRun = now;                // update timer
       advertise(wifi_get_channel());
+      if (getPersonality() == FRIENDLY) {
+        current_channel++;
+        if (current_channel > 14) {
+          current_channel = 0;
+        }
+        Serial.printf("MANU Mode: Hopping to channel: %d\n", current_channel);
+        wifi_set_channel(current_channel);
+      }
     }
   }
 
-  //Serial.println("Loop - updateUi(true)");
   updateUi(true);
   //Serial.println("Done loop");
 }

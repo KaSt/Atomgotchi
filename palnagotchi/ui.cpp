@@ -36,7 +36,7 @@ menu main_menu[] = {
 menu settings_menu[] = {
   { "Config (AP)", 40 },
   { "Personality", 42 },
-  { "Ninja Mode", 46 },
+  { "Ninja Mode", 45 },
   { "Back", 41 },
 };
 
@@ -46,10 +46,7 @@ menu nearby_menu[] = {
 
 menu personality_menu[] = {
   { "Friendly", 43 },
-  { "Sniffer", 44 },
-#ifdef I_CAN_BE_BAD
-  { "Aggressive", 45 },
-#endif
+  { "AI", 44 },
   { "Back", 41 },
 };
 
@@ -236,18 +233,14 @@ void updateUi(bool show_toolbars) {
           menu_current_opt = 0;
 
           if (menu_current_cmd == 43) {
-            Serial.println("Clicked on Personality Friendly.");
+            Serial.println("Clicked on Personality [Friendly]");
             setPersonality(FRIENDLY);
           } else if (menu_current_cmd == 44) {
-            Serial.println("Clicked on Personality Passive.");
-            setPersonality(SNIFFER);
+            Serial.println("Clicked on Personality [AI]");
+            setPersonality(AI);
           }
-#ifdef I_CAN_BE_BAD
-          else if (menu_current_cmd == 45) {
-            Serial.println("Clicked on Personality Aggressive.");
-            setPersonality(AGGRESSIVE);
-          }
-#endif
+          break;
+
         default:
           menu_current_cmd = 0;
           menu_current_opt = 0;
@@ -363,7 +356,7 @@ void drawBottomCanvas(uint8_t friends_run, uint8_t friends_tot, uint8_t pwned_ru
   canvas_bot.setColor(GREEN);
   canvas_bot.setTextDatum(top_left);
 
-  if (getPersonality() == SNIFFER) {
+  if (getPersonality() == AI) {
     char sniffer_stats[25] = "F 0 (0) P 0 (0)";
     if (friends_run > 0 || pwned_run > 0 || pwned_tot > 0) {
       snprintf(sniffer_stats, sizeof(sniffer_stats), "F %d (%d) P %d (%d)",
@@ -381,7 +374,9 @@ void drawBottomCanvas(uint8_t friends_run, uint8_t friends_tot, uint8_t pwned_ru
   }
   canvas_bot.setTextDatum(top_right);
   //if (display_w > 128) {
-     canvas_bot.drawString("AI", display_w, 5);
+     if (getPersonality() == AI) {
+      canvas_bot.drawString("AI", display_w, 5);
+     }
   // }
   canvas_bot.drawLine(0, 0, display_w, 0);
 }

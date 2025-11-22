@@ -4,36 +4,7 @@
 #include "Arduino.h"
 #include "nvs_flash.h"
 #include "environment.h"
-
-// Forward declaration
-struct Environment;
-
-// Actions the agent can take
-enum Action {
-  STAY_CHANNEL = 0,  // Stay on current channel
-  NEXT_CHANNEL = 1,  // Hop to next channel
-  PREV_CHANNEL = 2,  // Hop to previous channel
-  DEAUTH_MODE = 3,   // Send deauth packets (ethical monitoring only)
-  IDLE_MODE = 4      // Sleep to save power
-};
-
-// State representation
-struct State {
-  int channel;           // 0-12 (WiFi channels 1-13)
-  int ap_density;        // 0=empty, 1=low (1-2), 2=high (3+)
-  int recent_success;    // 0=no, 1=yes (handshake/PMKID in last N epochs)
-  int time_bucket;       // 0=night, 1=morning, 2=afternoon, 3=evening
-  uint32_t epoch;        // Current training epoch (for display only)
-
-  // Convert state to index for Q-table lookup
-  int toIndex() const {
-    // State space: 13 channels × 3 densities × 2 success × 4 time buckets = 312 states
-    return channel * 24 + ap_density * 8 + recent_success * 4 + time_bucket;
-  }
-
-  // Create state from environment observation
-  static State fromObservation(const Environment& env);
-};
+#include "action.h"
 
 // Global environment accessor
 Environment& getEnv();
@@ -85,6 +56,7 @@ inline State State::fromObservation(const Environment& env) {
   return s;
 }
 
-void initBrain();
+void startBrain();
+void stopBrain();
 
 #endif // STATE_H

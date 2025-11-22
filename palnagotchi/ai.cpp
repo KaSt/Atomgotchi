@@ -13,6 +13,8 @@ long observeSince = 0;
 long idleSince = 0;
 bool observing = false;
 
+TaskHandle_t brainTask;
+
 class QLearningAgent {
 private:
   static constexpr int NUM_STATES = 13 * 3 * 2 * 4;  // 312 states
@@ -228,7 +230,7 @@ public:
     else if (action == STAY_CHANNEL && env.got_handshake) {
       duration = MAX_STEP_DURATION_MS;  // Keep monitoring successful channel
     }
-    else if (action == DEAUTH_MODE) {
+    else if (action == AGGRESSIVE_MODE) {
       duration = 25000;  // Give deauth time to work
     }
 
@@ -390,13 +392,19 @@ void think(void* pv) {
   }
 }
 
-void initBrain() {
+void startBrain() {
   Serial.println("🧠 Initializing Brain...");
-  xTaskCreatePinnedToCore(think, "think", 8192, NULL, 1, NULL, 1);
+  //xTaskCreatePinnedToCore(think, "think", 8192, NULL, 1, NULL, 1);
+  xTaskCreate(think, "think", 8192, NULL, 1, &brainTask);
+}
+
+void stopBrain() {
+    vTaskDelete(brainTask);
 }
 
 void applyAction(Action action, Environment& env) {
   int currentCh = wifi_get_channel();
+  env.action = action;
 
   switch (action) {
     case STAY_CHANNEL:
@@ -418,14 +426,14 @@ void applyAction(Action action, Environment& env) {
       Serial.printf("⏮️  Prev → Channel %d\n", currentCh);
       break;
 
-    case DEAUTH_MODE:
-      Serial.println("⚡ Aggressive mode: DEAUTH");
-      // Send deauth to strongest AP (not implemented for ethical reasons)
-      // performDeauthCycle();
+    case AGGRESSIVE_MODE:
+      Serial.println("⚡ Aggressive Mode");
+
+      //performDeauthCycle();
       break;
 
     case IDLE_MODE:
-      Serial.println("😴 Power save mode: Napping...");
+      Serial.println("😴 Napping...");
       // Light sleep for power efficiency
       env.idle_time = agent.getStepDuration();
       

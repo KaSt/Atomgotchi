@@ -209,7 +209,7 @@ PwnIdentity ensurePwnIdentity(bool /*recompute_pub_if_missing*/) {
     Serial.println(F("[PWN-ID] Generated new Grid RSA identity"));
     Serial.printf ("  name        : %s\n", sid.name.c_str());
     Serial.printf ("  mac         : %s\n", sid.mac.c_str());
-    Serial.printf ("  private key: %s\n"), sid.privatekey_hex.c_str());
+    Serial.printf ("  private key: %s\n", sid.privatekey_hex.c_str());
     Serial.printf ("  fingerprint : %s\n", sid.fingerprint_hex.c_str());
     Serial.printf ("  session_id  : %s\n", sid.session_id.c_str());
   }

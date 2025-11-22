@@ -64,7 +64,7 @@ bool StorageManager::detectSDCard() {
                   sdCSPin, sdMOSIPin, sdMISOPin, sdSCKPin);
     
     // Try to initialize SD card with SPI
-    SPIClass spi = SPIClass(VSPI);
+    SPIClass spi = SPIClass(FSPI);
     spi.begin(sdSCKPin, sdMISOPin, sdMOSIPin, sdCSPin);
     
     if (!SD.begin(sdCSPin, spi)) {

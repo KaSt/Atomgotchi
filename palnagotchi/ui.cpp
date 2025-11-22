@@ -98,6 +98,11 @@ void openPersonalityMenu();
 void openAPConfigMenu();
 void openStorageMenu();
 void toggleNinjaMode();
+
+// Forward declarations for button functions
+bool toggleMenuBtnPressed();
+bool isNextPressed();
+String getRssiBars(signed int rssi);
 void setPersonalityFriendly();
 void setPersonalityAI();
 void formatSDCard();
@@ -250,7 +255,7 @@ void toggleNinjaMode() {
 }
 
 void setPersonalityFriendly() {
-  setPersonality("friendly");
+  setPersonality(FRIENDLY);
   
   // Show confirmation
   canvas_main.fillSprite(TFT_BLACK);
@@ -265,7 +270,7 @@ void setPersonalityFriendly() {
 }
 
 void setPersonalityAI() {
-  setPersonality("ai");
+  setPersonality(AI);
   
   // Show confirmation
   canvas_main.fillSprite(TFT_BLACK);
@@ -452,8 +457,6 @@ void switchToInternalStorage() {
   
   openStorageMenu();
 }
-
-bool keyboard_changed = false;
 
 // Long press to toggle menu or select item
 bool toggleMenuBtnPressed() {
@@ -705,7 +708,7 @@ void drawMood(String face, String phrase, bool broken,
 #define PADDING 10
 
 void drawMainMenu() {
-
+  // Legacy function - now handled by MenuSystem
   if (!isDisplayOn) {
     return;
   }
@@ -724,27 +727,10 @@ void drawMainMenu() {
   canvas_main.setTextColor(YELLOW);
   canvas_main.drawString("MAIN MENU", PADDING, PADDING);
   canvas_main.setTextColor(GREEN);
-
-  char display_str[50] = "";
-  for (uint8_t i = 0; i < main_menu_len; i++) {
-    snprintf(display_str, sizeof(display_str), "%s %s",
-             (menu_current_opt == i) ? ">" : " ",
-             main_menu[i].name);
-    int y = PADDING + 20 + (i * ROW_SIZE / 2);
-    canvas_main.drawString(display_str, PADDING, y);
-  }
-
-  /*
-  // Help text at bottom
-  canvas_main.setTextColor(TFT_DARKGRAY);
-  canvas_main.setTextSize(1);
-  canvas_main.setTextDatum(bottom_center);
-  canvas_main.drawString("Press: Next | Hold: Select", canvas_center_x, canvas_h - 5);
-  */
 }
 
 void drawNearbyMenu() {
-
+  // Legacy function - now handled by MenuSystem
   if (!isDisplayOn) {
     return;
   }
@@ -768,36 +754,11 @@ void drawNearbyMenu() {
     canvas_main.setCursor(PADDING, PADDING + 20);
     canvas_main.println("No friends nearby");
     canvas_main.println("found yet...");
-  } else {
-    char display_str[50] = "";
-    for (uint8_t i = 0; i < len; i++) {
-      snprintf(display_str, sizeof(display_str), "%s %s [%s]",
-               (menu_current_opt == i) ? ">" : " ",
-               pwngrid_peers[i].name,
-               getRssiBars(pwngrid_peers[i].rssi).c_str());
-      int y = PADDING + 20 + (i * ROW_SIZE / 2);
-      canvas_main.drawString(display_str, PADDING, y);
-    }
   }
-
-  // Back option
-  char back_str[50] = "";
-  snprintf(back_str, sizeof(back_str), "%s Back",
-           (menu_current_opt == len) ? ">" : " ");
-  int back_y = PADDING + 20 + (len * ROW_SIZE / 2);
-  canvas_main.drawString(back_str, PADDING, back_y);
-
-  /*
-  // Help text
-  canvas_main.setTextColor(TFT_DARKGRAY);
-  canvas_main.setTextSize(1);
-  canvas_main.setTextDatum(bottom_center);
-  canvas_main.drawString("Press: Next | Hold: Select", canvas_center_x, canvas_h - 5);
-  */
 }
 
 void drawSettingsMenu() {
-
+  // Legacy function - now handled by MenuSystem
   if (!isDisplayOn) {
     return;
   }
@@ -812,23 +773,6 @@ void drawSettingsMenu() {
   canvas_main.setTextColor(YELLOW);
   canvas_main.drawString("SETTINGS", PADDING, PADDING);
   canvas_main.setTextColor(GREEN);
-
-  char display_str[50] = "";
-  for (uint8_t i = 0; i < settings_menu_len; i++) {
-    snprintf(display_str, sizeof(display_str), "%s %s",
-             (menu_current_opt == i) ? ">" : " ",
-             settings_menu[i].name);
-    int y = PADDING + 20 + (i * ROW_SIZE / 2);
-    canvas_main.drawString(display_str, PADDING, y);
-  }
-
-  /*
-  // Help text
-  canvas_main.setTextColor(TFT_DARKGRAY);
-  canvas_main.setTextSize(1);
-  canvas_main.setTextDatum(bottom_center);
-  canvas_main.drawString("Press: Next | Hold: Select", canvas_center_x, canvas_h - 5);
-  */
 }
 
 void drawAboutMenu() {
@@ -905,7 +849,7 @@ void drawAPConfigMenu() {
 }
 
 void drawPersonalityMenu() {
-
+  // Legacy function - now handled by MenuSystem
   if (!isDisplayOn) {
     return;
   }
@@ -920,15 +864,6 @@ void drawPersonalityMenu() {
   canvas_main.setTextColor(YELLOW);
   canvas_main.drawString("PERSONALITY", PADDING, PADDING);
   canvas_main.setTextColor(GREEN);
-
-  char display_str[50] = "";
-  for (uint8_t i = 0; i < personality_menu_len; i++) {
-    snprintf(display_str, sizeof(display_str), "%s %s",
-             (menu_current_opt == i) ? ">" : " ",
-             personality_menu[i].name);
-    int y = PADDING + 20 + (i * ROW_SIZE / 2);
-    canvas_main.drawString(display_str, PADDING, y);
-  }
 }
 
 void drawMenu() {

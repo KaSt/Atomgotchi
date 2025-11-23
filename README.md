@@ -186,19 +186,67 @@ Main Menu
 └── About ──────────── Device info, version, stats
 ```
 
-### First-Time Setup
+## 🚀 Installation
 
-1. **Flash firmware** to your M5Stack device
-2. **Power on** - Device will use "Palnagotchi" as default name
-3. **(Optional) Configure**:
+### Option 1: Web Flasher (Recommended ⭐)
+
+The easiest way to install Gotchi is using our web-based flasher:
+
+**[👉 Flash Your Device Now](https://kast.github.io/Atomgotchi/flasher/)**
+
+1. Open the link above in **Chrome or Edge** browser
+2. Select your device from the visual grid
+3. Click "Connect & Flash" and choose your device's serial port
+4. Wait 1-2 minutes for the flash to complete
+5. Done! Your device will reboot with Gotchi firmware
+
+**Requirements:**
+- Chrome 89+, Edge 89+, or Opera 75+ (Web Serial API support)
+- USB cable connected to your device
+- No drivers or software installation needed!
+
+### Option 2: PlatformIO (For Developers)
+
+```bash
+# Clone repository
+git clone https://github.com/KaSt/Atomgotchi.git
+cd Atomgotchi
+
+# Install PlatformIO
+pip install platformio
+
+# Build and flash (example for Cardputer)
+pio run -e m5stack-cardputer -t upload
+
+# Build for all devices
+pio run
+```
+
+### Option 3: Manual Flash with ESPTool
+
+```bash
+# Download latest firmware from releases
+# https://github.com/KaSt/Atomgotchi/releases/latest
+
+# Install esptool
+pip install esptool
+
+# Flash to device (example for ESP32-S3)
+esptool.py --chip esp32s3 --port /dev/ttyUSB0 write_flash 0x0 gotchi-*.bin
+```
+
+## ⚙️ First-Time Setup
+
+1. **Power on** - Device will use "Gotchi" as default name
+2. **(Optional) Configure**:
    - Open menu → Settings → WiFi Config (AP)
    - Connect phone to `Palnagotchi-Config` (password: `palnagotchi`)
    - Browse to `http://192.168.4.1`
    - Set device name, brightness, personality
    - Save configuration
-4. **(Optional) Choose personality**:
+3. **(Optional) Choose personality**:
    - Menu → Settings → Personality → AI or Friendly
-5. **Start exploring!** The device will immediately begin advertising and detecting friends
+4. **Start exploring!** The device will immediately begin advertising and detecting friends
 
 ### Personality Mode Selection
 
@@ -318,34 +366,51 @@ Where:
 - `/friends.ndjson`: Friend database with GPS coordinates
 - `/packets.ndjson`: Captured packet metadata
 
-## 🛠️ Building & Flashing
+## 🛠️ Building from Source
 
 ### Prerequisites
-- Arduino IDE 2.0+ or arduino-cli
-- ESP32 board support package v3.x
-- M5Stack library support
+- PlatformIO Core 6.0+ or PlatformIO IDE
+- Python 3.7+
 
-### Dependencies
+### Dependencies (Auto-installed)
 ```
-M5Unified
-M5GFX
-ArduinoJson
-LittleFS
-SD (ESP32)
+M5Unified v0.1.16+
+M5GFX v0.1.16+
+ArduinoJson v7.2.0+
+ESP32 Arduino Framework 3.0.7+
 ```
 
-### Compilation
+### Build Commands
 ```bash
-# Using arduino-cli
-arduino-cli compile --fqbn m5stack:esp32:m5stack_cardputer palnagotchi/
+# Build for specific device
+pio run -e m5stack-cardputer
+pio run -e lilygo-t-display-s3
+pio run -e m5stack-atoms3
 
-# Flash to device
-arduino-cli upload -p /dev/ttyUSB0 --fqbn m5stack:esp32:m5stack_cardputer palnagotchi/
+# Build all 26+ board variants
+pio run
+
+# Upload to device
+pio run -e m5stack-cardputer -t upload
+
+# Clean build
+pio run -t clean
 ```
+
+### CI/CD Builds
+
+Every push to the main branch automatically:
+1. Builds firmware for all supported devices
+2. Creates a GitHub release with version tag
+3. Uploads firmware binaries to releases
+4. Updates the web flasher with latest firmware
+
+See `.github/workflows/build-release.yml` for details.
 
 ### Build Outputs
-- Program storage: ~1.3MB (38% of 3.3MB)
-- Global variables: ~107KB (32% of 320KB RAM)
+- Program storage: ~1.3MB (varies by board)
+- Global variables: ~107KB RAM
+- Build time: ~2-3 minutes per board
 
 ## 📁 Project Structure
 

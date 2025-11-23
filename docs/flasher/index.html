@@ -1,0 +1,829 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gotchi Web Flasher - Install Firmware to ESP32 Devices</title>
+    <meta name="description" content="Flash Gotchi firmware to M5Stack, LilyGo, and other ESP32 devices directly from your browser">
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: #00d4aa;
+            --primary-dark: #00a885;
+            --secondary: #ff6b6b;
+            --dark: #1a1a2e;
+            --dark-light: #16213e;
+            --dark-lighter: #0f3460;
+            --text: #e4e4e4;
+            --text-dim: #a0a0a0;
+            --success: #00d4aa;
+            --warning: #ffd93d;
+            --error: #ff6b6b;
+            --card-bg: #16213e;
+            --card-hover: #0f3460;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: var(--text);
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* Header */
+        header {
+            text-align: center;
+            padding: 60px 20px 40px;
+            background: linear-gradient(135deg, var(--dark-light) 0%, var(--dark-lighter) 100%);
+            border-radius: 20px;
+            margin-bottom: 40px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        header h1 {
+            font-size: 3.5rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--primary) 0%, #00ffcc 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 15px;
+            text-shadow: 0 0 30px rgba(0, 212, 170, 0.3);
+        }
+
+        header p {
+            font-size: 1.3rem;
+            color: var(--text-dim);
+            max-width: 700px;
+            margin: 0 auto;
+        }
+
+        .version-badge {
+            display: inline-block;
+            background: var(--primary);
+            color: var(--dark);
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-weight: 700;
+            margin-top: 20px;
+            font-size: 0.9rem;
+        }
+
+        /* Browser Check Warning */
+        .browser-warning {
+            background: var(--warning);
+            color: var(--dark);
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+            display: none;
+            text-align: center;
+            font-weight: 600;
+        }
+
+        .browser-warning.show {
+            display: block;
+        }
+
+        /* Device Selection */
+        .section {
+            margin-bottom: 50px;
+        }
+
+        .section h2 {
+            font-size: 2rem;
+            margin-bottom: 25px;
+            color: var(--primary);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .section h2::before {
+            content: "▶";
+            font-size: 1.5rem;
+        }
+
+        .device-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .device-card {
+            background: var(--card-bg);
+            border-radius: 15px;
+            padding: 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: 3px solid transparent;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .device-card::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, var(--primary), #00ffcc);
+            transform: scaleX(0);
+            transition: transform 0.3s ease;
+        }
+
+        .device-card:hover {
+            background: var(--card-hover);
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0, 212, 170, 0.2);
+        }
+
+        .device-card:hover::before {
+            transform: scaleX(1);
+        }
+
+        .device-card.selected {
+            border-color: var(--primary);
+            background: var(--card-hover);
+            box-shadow: 0 0 30px rgba(0, 212, 170, 0.3);
+        }
+
+        .device-card.selected::before {
+            transform: scaleX(1);
+        }
+
+        .device-image {
+            width: 100%;
+            height: 180px;
+            background: var(--dark);
+            border-radius: 10px;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 4rem;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .device-image img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .device-image .placeholder {
+            font-size: 3rem;
+            opacity: 0.3;
+        }
+
+        .device-name {
+            font-size: 1.2rem;
+            font-weight: 700;
+            margin-bottom: 8px;
+            color: var(--text);
+        }
+
+        .device-specs {
+            font-size: 0.85rem;
+            color: var(--text-dim);
+            margin-bottom: 10px;
+        }
+
+        .device-chip {
+            display: inline-block;
+            background: var(--dark-lighter);
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--primary);
+            margin-top: 5px;
+        }
+
+        .recommended-badge {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: var(--warning);
+            color: var(--dark);
+            padding: 5px 12px;
+            border-radius: 15px;
+            font-size: 0.75rem;
+            font-weight: 700;
+        }
+
+        /* Flash Section */
+        .flash-container {
+            background: var(--card-bg);
+            border-radius: 15px;
+            padding: 40px;
+            text-align: center;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .flash-btn {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: white;
+            border: none;
+            padding: 18px 50px;
+            font-size: 1.3rem;
+            font-weight: 700;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 5px 20px rgba(0, 212, 170, 0.4);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .flash-btn:hover:not(:disabled) {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 30px rgba(0, 212, 170, 0.6);
+        }
+
+        .flash-btn:disabled {
+            background: var(--text-dim);
+            cursor: not-allowed;
+            opacity: 0.5;
+            box-shadow: none;
+        }
+
+        .flash-btn-icon {
+            margin-right: 10px;
+        }
+
+        /* Progress Section */
+        .progress-container {
+            margin-top: 30px;
+            display: none;
+        }
+
+        .progress-container.show {
+            display: block;
+        }
+
+        .progress-bar-bg {
+            background: var(--dark-lighter);
+            height: 40px;
+            border-radius: 20px;
+            overflow: hidden;
+            margin-bottom: 15px;
+            position: relative;
+        }
+
+        .progress-bar {
+            background: linear-gradient(90deg, var(--primary), #00ffcc);
+            height: 100%;
+            width: 0%;
+            transition: width 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 700;
+            font-size: 0.9rem;
+        }
+
+        .progress-text {
+            color: var(--text-dim);
+            font-size: 0.95rem;
+            margin-top: 10px;
+        }
+
+        .log-container {
+            background: var(--dark);
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 20px;
+            max-height: 300px;
+            overflow-y: auto;
+            text-align: left;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            display: none;
+        }
+
+        .log-container.show {
+            display: block;
+        }
+
+        .log-line {
+            padding: 3px 0;
+            color: var(--text-dim);
+        }
+
+        .log-line.success {
+            color: var(--success);
+        }
+
+        .log-line.error {
+            color: var(--error);
+        }
+
+        .log-line.warning {
+            color: var(--warning);
+        }
+
+        /* Info Boxes */
+        .info-box {
+            background: var(--dark-lighter);
+            border-left: 4px solid var(--primary);
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+
+        .info-box h3 {
+            color: var(--primary);
+            margin-bottom: 10px;
+            font-size: 1.2rem;
+        }
+
+        .info-box ul {
+            margin-left: 20px;
+            color: var(--text-dim);
+        }
+
+        .info-box li {
+            margin: 8px 0;
+        }
+
+        /* Footer */
+        footer {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--text-dim);
+            margin-top: 60px;
+            border-top: 1px solid var(--dark-lighter);
+        }
+
+        footer a {
+            color: var(--primary);
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        /* Animations */
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .flashing {
+            animation: pulse 1.5s infinite;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            header h1 {
+                font-size: 2.5rem;
+            }
+
+            header p {
+                font-size: 1.1rem;
+            }
+
+            .device-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .flash-btn {
+                width: 100%;
+                padding: 15px 30px;
+                font-size: 1.1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>⚡ Gotchi Web Flasher</h1>
+            <p>Flash your ESP32 device directly from your browser - no drivers, no hassle</p>
+            <div class="version-badge" id="version-badge">Loading version...</div>
+        </header>
+
+        <div class="browser-warning" id="browser-warning">
+            ⚠️ Web Serial API is not supported in your browser. Please use Chrome, Edge, or Opera.
+        </div>
+
+        <div class="section">
+            <h2>1. Select Your Device</h2>
+            
+            <h3 style="color: var(--text-dim); margin-bottom: 15px; font-size: 1.3rem;">M5Stack Devices</h3>
+            <div class="device-grid" id="m5stack-devices">
+                <!-- M5Stack devices will be populated here -->
+            </div>
+
+            <h3 style="color: var(--text-dim); margin-bottom: 15px; margin-top: 30px; font-size: 1.3rem;">LilyGo Devices</h3>
+            <div class="device-grid" id="lilygo-devices">
+                <!-- LilyGo devices will be populated here -->
+            </div>
+
+            <h3 style="color: var(--text-dim); margin-bottom: 15px; margin-top: 30px; font-size: 1.3rem;">Other Devices</h3>
+            <div class="device-grid" id="other-devices">
+                <!-- Other devices will be populated here -->
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>2. Connect and Flash</h2>
+            <div class="flash-container">
+                <p style="margin-bottom: 30px; color: var(--text-dim); font-size: 1.1rem;" id="flash-instruction">
+                    Select a device above to begin
+                </p>
+                
+                <button class="flash-btn" id="flash-btn" disabled>
+                    <span class="flash-btn-icon">⚡</span>
+                    Connect & Flash
+                </button>
+
+                <div class="progress-container" id="progress-container">
+                    <div class="progress-bar-bg">
+                        <div class="progress-bar" id="progress-bar">0%</div>
+                    </div>
+                    <div class="progress-text" id="progress-text">Preparing...</div>
+                </div>
+
+                <div class="log-container" id="log-container">
+                    <div class="log-line">Flash log will appear here...</div>
+                </div>
+            </div>
+
+            <div class="info-box">
+                <h3>📋 Before You Flash</h3>
+                <ul>
+                    <li>Make sure you're using Chrome, Edge, or Opera browser</li>
+                    <li>Connect your device via USB cable</li>
+                    <li>All existing data will be erased during flashing</li>
+                    <li>Do not disconnect your device during the flashing process</li>
+                    <li>First boot may take 30-60 seconds to initialize the filesystem</li>
+                </ul>
+            </div>
+
+            <div class="info-box">
+                <h3>🎯 What's Included</h3>
+                <ul>
+                    <li><strong>Pwngrid Protocol:</strong> Detect and befriend nearby Pwnagotchis</li>
+                    <li><strong>AI Q-Learning:</strong> Smart channel hopping and handshake capture</li>
+                    <li><strong>Friendly Mode:</strong> Passive monitoring without deauth attacks</li>
+                    <li><strong>GPS Support:</strong> Automatic GPS module detection and location tagging</li>
+                    <li><strong>SD Card:</strong> External storage support with auto-migration</li>
+                    <li><strong>Web Config:</strong> Easy setup via WiFi AP configuration portal</li>
+                </ul>
+            </div>
+        </div>
+
+        <footer>
+            <p>
+                <strong>Gotchi</strong> - Educational WiFi Security Research Platform<br>
+                <a href="https://github.com/KaSt/Atomgotchi" target="_blank">GitHub Repository</a> • 
+                <a href="https://github.com/KaSt/Atomgotchi/blob/master/README.md" target="_blank">Documentation</a> • 
+                <a href="https://github.com/KaSt/Atomgotchi/issues" target="_blank">Report Issues</a>
+            </p>
+            <p style="margin-top: 20px; font-size: 0.9rem;">
+                ⚠️ For educational purposes only. Only use on networks you own or have permission to test.
+            </p>
+        </footer>
+    </div>
+
+    <script type="module">
+        import { ESPLoader, Transport } from "https://unpkg.com/esptool-js@0.4.1/bundle.js";
+
+        // Device database
+        const devices = [
+            {
+                id: "m5stack-cardputer",
+                name: "M5Stack Cardputer",
+                category: "m5stack",
+                chip: "ESP32-S3",
+                specs: "240×135 LCD, Keyboard",
+                recommended: true,
+                emoji: "⌨️",
+                image: null
+            },
+            {
+                id: "m5stick-c-plus2",
+                name: "M5StickC Plus2",
+                category: "m5stack",
+                chip: "ESP32-PICO",
+                specs: "240×135 LCD, Buttons",
+                emoji: "📱",
+                image: null
+            },
+            {
+                id: "m5stack-atoms3",
+                name: "M5Atom S3",
+                category: "m5stack",
+                chip: "ESP32-S3",
+                specs: "128×128 LCD, Touch",
+                emoji: "🔲",
+                image: null
+            },
+            {
+                id: "m5stack-atoms3r",
+                name: "M5Atom S3R",
+                category: "m5stack",
+                chip: "ESP32-S3",
+                specs: "128×128 LCD, Rotary",
+                emoji: "🎚️",
+                image: null
+            },
+            {
+                id: "m5stack-core-esp32",
+                name: "M5Stack Core",
+                category: "m5stack",
+                chip: "ESP32",
+                specs: "320×240 LCD",
+                emoji: "📦",
+                image: null
+            },
+            {
+                id: "m5stack-core2",
+                name: "M5Stack Core2",
+                category: "m5stack",
+                chip: "ESP32",
+                specs: "320×240 Touch",
+                emoji: "📦",
+                image: null
+            },
+            {
+                id: "m5stack-cores3",
+                name: "M5Stack CoreS3",
+                category: "m5stack",
+                chip: "ESP32-S3",
+                specs: "320×240 Touch",
+                emoji: "📦",
+                image: null
+            },
+            {
+                id: "lilygo-t-display-s3",
+                name: "LilyGo T-Display S3",
+                category: "lilygo",
+                chip: "ESP32-S3",
+                specs: "320×170 LCD",
+                emoji: "📺",
+                image: null
+            },
+            {
+                id: "lilygo-t-display",
+                name: "LilyGo T-Display",
+                category: "lilygo",
+                chip: "ESP32",
+                specs: "240×135 LCD",
+                emoji: "📺",
+                image: null
+            },
+            {
+                id: "lilygo-t-embed",
+                name: "LilyGo T-Embed",
+                category: "lilygo",
+                chip: "ESP32-S3",
+                specs: "170×320 LCD, Rotary",
+                emoji: "🎛️",
+                image: null
+            },
+            {
+                id: "heltec-wifi-lora-32-v3",
+                name: "Heltec WiFi LoRa 32 V3",
+                category: "other",
+                chip: "ESP32-S3",
+                specs: "128×64 OLED, LoRa",
+                emoji: "📡",
+                image: null
+            }
+        ];
+
+        let selectedDevice = null;
+        let esploader = null;
+        let transport = null;
+
+        // Check browser compatibility
+        function checkBrowserCompatibility() {
+            if (!("serial" in navigator)) {
+                document.getElementById("browser-warning").classList.add("show");
+                return false;
+            }
+            return true;
+        }
+
+        // Load firmware info
+        async function loadFirmwareInfo() {
+            try {
+                const response = await fetch('firmware/index.json');
+                const info = await response.json();
+                document.getElementById('version-badge').textContent = 
+                    `v${info.version} (${info.commit})`;
+            } catch (error) {
+                console.error("Failed to load firmware info:", error);
+                document.getElementById('version-badge').textContent = 'Latest Version';
+            }
+        }
+
+        // Render devices
+        function renderDevices() {
+            const m5stackContainer = document.getElementById('m5stack-devices');
+            const lilygoContainer = document.getElementById('lilygo-devices');
+            const otherContainer = document.getElementById('other-devices');
+
+            devices.forEach(device => {
+                const card = document.createElement('div');
+                card.className = 'device-card';
+                card.onclick = () => selectDevice(device);
+
+                const imageContent = device.image 
+                    ? `<img src="${device.image}" alt="${device.name}">`
+                    : `<span class="placeholder">${device.emoji}</span>`;
+
+                card.innerHTML = `
+                    ${device.recommended ? '<div class="recommended-badge">⭐ Recommended</div>' : ''}
+                    <div class="device-image">${imageContent}</div>
+                    <div class="device-name">${device.name}</div>
+                    <div class="device-specs">${device.specs}</div>
+                    <span class="device-chip">${device.chip}</span>
+                `;
+
+                if (device.category === 'm5stack') {
+                    m5stackContainer.appendChild(card);
+                } else if (device.category === 'lilygo') {
+                    lilygoContainer.appendChild(card);
+                } else {
+                    otherContainer.appendChild(card);
+                }
+            });
+        }
+
+        // Select device
+        function selectDevice(device) {
+            selectedDevice = device;
+            
+            // Update UI
+            document.querySelectorAll('.device-card').forEach(card => {
+                card.classList.remove('selected');
+            });
+            event.currentTarget.classList.add('selected');
+
+            document.getElementById('flash-btn').disabled = false;
+            document.getElementById('flash-instruction').textContent = 
+                `Ready to flash ${device.name}. Click the button below to connect.`;
+        }
+
+        // Add log message
+        function addLog(message, type = 'info') {
+            const logContainer = document.getElementById('log-container');
+            logContainer.classList.add('show');
+            
+            const logLine = document.createElement('div');
+            logLine.className = `log-line ${type}`;
+            logLine.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logContainer.appendChild(logLine);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        // Update progress
+        function updateProgress(percent, text) {
+            const progressBar = document.getElementById('progress-bar');
+            const progressText = document.getElementById('progress-text');
+            const progressContainer = document.getElementById('progress-container');
+
+            progressContainer.classList.add('show');
+            progressBar.style.width = `${percent}%`;
+            progressBar.textContent = `${Math.round(percent)}%`;
+            progressText.textContent = text;
+        }
+
+        // Flash firmware
+        async function flashFirmware() {
+            if (!selectedDevice) {
+                alert('Please select a device first');
+                return;
+            }
+
+            const flashBtn = document.getElementById('flash-btn');
+            flashBtn.disabled = true;
+            flashBtn.classList.add('flashing');
+
+            try {
+                addLog('Requesting serial port access...', 'info');
+                
+                // Request port
+                const port = await navigator.serial.requestPort();
+                transport = new Transport(port);
+
+                addLog('Connecting to device...', 'info');
+                updateProgress(10, 'Connecting...');
+
+                // Determine chip type
+                const chipType = selectedDevice.chip.toLowerCase().includes('s3') ? 'esp32s3' : 
+                                selectedDevice.chip.toLowerCase().includes('c3') ? 'esp32c3' : 'esp32';
+
+                esploader = new ESPLoader({
+                    transport,
+                    baudrate: 115200,
+                    terminal: {
+                        clean() {},
+                        writeLine(data) { addLog(data, 'info'); },
+                        write(data) { addLog(data, 'info'); }
+                    }
+                });
+
+                await esploader.main();
+                
+                addLog(`Connected! Chip: ${esploader.chip.CHIP_NAME}`, 'success');
+                updateProgress(20, 'Loading firmware...');
+
+                // Load firmware
+                const firmwareUrl = `firmware/gotchi-${selectedDevice.id}-latest.bin`;
+                addLog(`Downloading firmware: ${firmwareUrl}`, 'info');
+
+                const response = await fetch(firmwareUrl);
+                if (!response.ok) {
+                    throw new Error(`Failed to download firmware: ${response.statusText}`);
+                }
+
+                const firmwareData = await response.arrayBuffer();
+                addLog(`Firmware loaded: ${(firmwareData.byteLength / 1024).toFixed(2)} KB`, 'success');
+                updateProgress(30, 'Erasing flash...');
+
+                // Flash firmware
+                addLog('Erasing flash memory...', 'warning');
+                await esploader.eraseFlash();
+                
+                addLog('Writing firmware to flash...', 'info');
+                updateProgress(40, 'Writing firmware...');
+
+                // Write with progress callback
+                await esploader.writeFlash({
+                    fileArray: [{
+                        data: firmwareData,
+                        address: 0x0
+                    }],
+                    flashSize: 'keep',
+                    eraseAll: false,
+                    compress: true,
+                    reportProgress: (written, total) => {
+                        const percent = 40 + (written / total * 50);
+                        updateProgress(percent, `Writing: ${(written / 1024).toFixed(0)}/${(total / 1024).toFixed(0)} KB`);
+                    }
+                });
+
+                addLog('Firmware written successfully!', 'success');
+                updateProgress(95, 'Verifying...');
+
+                addLog('Resetting device...', 'info');
+                await esploader.hardReset();
+
+                updateProgress(100, 'Complete! 🎉');
+                addLog('✅ Flash complete! Your device is rebooting...', 'success');
+                addLog('First boot may take 30-60 seconds to initialize.', 'warning');
+
+                flashBtn.textContent = '✅ Flash Complete!';
+                flashBtn.style.background = 'var(--success)';
+
+                setTimeout(() => {
+                    flashBtn.disabled = false;
+                    flashBtn.classList.remove('flashing');
+                    flashBtn.textContent = '⚡ Connect & Flash';
+                    flashBtn.style.background = '';
+                }, 5000);
+
+            } catch (error) {
+                addLog(`❌ Error: ${error.message}`, 'error');
+                updateProgress(0, 'Failed');
+                flashBtn.disabled = false;
+                flashBtn.classList.remove('flashing');
+                alert(`Flash failed: ${error.message}`);
+            }
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            checkBrowserCompatibility();
+            loadFirmwareInfo();
+            renderDevices();
+            
+            document.getElementById('flash-btn').addEventListener('click', flashFirmware);
+        });
+    </script>
+</body>
+</html>

@@ -54,12 +54,19 @@ void loadConfig() {
   if (magic == CONFIG_MAGIC_VALUE) {
     // Load configuration from EEPROM
     EEPROM.get(EEPROM_CONFIG_START_ADDR, device_config);
+    Serial.println("loadConfig: Config found in EEPROM");
   } else {
     // First time setup - initialize with defaults
+    Serial.println("loadConfig: First boot - initializing stats and config");
     initStats();
     resetConfig();
     saveConfig();
   }
+  
+  // Always log current stats values
+  Serial.printf("Stats: Friends=%llu, Pwned=%llu, Epoch=%u\n", 
+                getFriendsTot(), getPwnedTot(), getEpoch());
+  
   Serial.println("loadConfig done.");
 }
 

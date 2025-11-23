@@ -362,7 +362,7 @@ void applyAction(Action action, Environment& env) {
       
     case AGGRESSIVE_MODE:
       Serial.println("⚡ Aggressive");
-      // performDeauthCycle();
+      performDeauthCycle();
       break;
       
     case IDLE_MODE:

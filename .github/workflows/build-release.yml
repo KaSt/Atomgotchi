@@ -62,7 +62,7 @@ jobs:
           COMMIT="${{ steps.version.outputs.commit_hash }}"
           BUILD_DATE=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
           
-          # Create release notes - using cat with proper escaping
+          # Create release notes
           cat > release_notes.md << 'RELEASENOTES'
 ## Gotchi Firmware v$VERSION
 

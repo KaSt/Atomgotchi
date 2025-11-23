@@ -67,8 +67,22 @@ bool StorageManager::detectSDCard() {
     SPIClass spi = SPIClass(FSPI);
     spi.begin(sdSCKPin, sdMISOPin, sdMOSIPin, sdCSPin);
     
-    if (!SD.begin(sdCSPin, spi)) {
+    // Timeout for SD.begin() to prevent hanging
+    unsigned long startTime = millis();
+    bool sdInitSuccess = false;
+    
+    Serial.println("SD: Attempting initialization (timeout: 3s)...");
+    if (!SD.begin(sdCSPin, spi, 80000000, "/sd", 5)) {
         Serial.println("SD: Not detected or failed to initialize");
+        spi.end();
+        return false;
+    }
+    
+    // Check if we timed out during initialization
+    if (millis() - startTime > 3000) {
+        Serial.println("SD: Initialization timeout");
+        SD.end();
+        spi.end();
         return false;
     }
     
@@ -76,6 +90,7 @@ bool StorageManager::detectSDCard() {
     if (cardType == CARD_NONE) {
         Serial.println("SD: No card attached");
         SD.end();
+        spi.end();
         return false;
     }
     
@@ -147,8 +162,20 @@ bool StorageManager::begin() {
     int savedPref = storagePrefs.getInt("type", STORAGE_LITTLEFS);
     storagePrefs.end();
     
-    // Check for SD card
+    Serial.println("Storage: Detecting SD card...");
+    
+    // Check for SD card with timeout protection
+    unsigned long sdCheckStart = millis();
     sdAvailable = detectSDCard();
+    unsigned long sdCheckDuration = millis() - sdCheckStart;
+    
+    Serial.printf("Storage: SD detection took %lu ms\n", sdCheckDuration);
+    
+    if (!sdAvailable) {
+        Serial.println("Storage: No SD card - using LittleFS");
+        currentStorage = STORAGE_LITTLEFS;
+        return true;
+    }
     
     if (sdAvailable) {
         sdFormatted = checkSDFormatted();

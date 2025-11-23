@@ -32,16 +32,30 @@ void setup() {
   Serial.println("\n\n=== BOOT START ===");
   randomSeed(esp_random());
   initM5();
+  Serial.println("Init: Config...");
   initConfig();
+  Serial.println("Init: AP Config...");
   initAPConfig();
+  Serial.println("Init: Mood...");
   initMood();
+  Serial.println("Init: Pwning...");
   initPwning();
+  Serial.println("Init: UI...");
   initUi();
+  Serial.println("Init: Complete");
+  
   lastPersonality = getPersonality();
+  Serial.printf("Personality: %s (%d)\n", getPersonalityText().c_str(), getPersonality());
+  
   if (getPersonality() == AI ) {
+    Serial.println("Starting AI brain...");
     startBrain();
+  } else {
+    Serial.println("Running in Friendly mode (no AI)");
   }
+  
   state = STATE_INIT;
+  Serial.println("=== BOOT COMPLETE ===\n");
 }
 
 uint8_t current_channel = 1;

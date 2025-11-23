@@ -325,7 +325,12 @@ void think(void* pv) {
 
 void startBrain() {
   Serial.println("🧠 Starting Brain...");
-  xTaskCreate(think, "think", 8192, NULL, 1, &brainTask);
+  BaseType_t result = xTaskCreate(think, "think", 8192, NULL, 1, &brainTask);
+  if (result == pdPASS) {
+    Serial.println("🧠 Brain task created successfully");
+  } else {
+    Serial.println("❌ Failed to create brain task");
+  }
 }
 
 void stopBrain() {

@@ -1,3 +1,6 @@
+#ifndef _PWNAGOTCHI_MOODS_
+#define _PWNAGOTCHI_MOODS_
+
 const String pwnagotchi_moods[] = {
     "(⇀‿‿↼)",  // 0 - sleeping
     "(≖‿‿≖)",  // 1 - awakening
@@ -21,3 +24,5 @@ const String pwnagotchi_moods[] = {
     "(☓‿‿☓)",  // 19 - broken
     "(#__#)"   // 20 - debugging
 };
+
+#endif

@@ -1,4 +1,33 @@
+# IDE
 .vscode
+.idea/
+
+# Build artifacts
 *.bin
-.DS_Store
+*.elf
+*.map
 build
+.pio/
+firmware-output/
+release-files/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temp files
+*.tmp
+*.bak
+*.swp
+*.swo
+*~
+
+# Snyk Security Extension - AI Rules (auto-generated)
+.github/instructions/snyk_rules.instructions.md
+
+# Don't ignore firmware in docs/flasher/firmware (for web flasher)
+!docs/flasher/firmware/*.bin
+!docs/flasher/firmware/*.json

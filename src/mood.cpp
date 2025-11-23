@@ -117,13 +117,16 @@ String getCurrentMoodPhrase() { return current_phrase; }
 bool isCurrentMoodBroken() { return current_broken; }
 
 void initMood() {
+  //Serial.println("Initting Mood");
   if (M5.Display.width() <= 128) {
     palnagotchi_moods = palnagotchi_small_moods;
     palnagotchi_moods_desc = homeygotchi_moods_short_desc;
   }
+  //Serial.println("Mood initialised.");
 }
 
 void setMood(uint8_t mood, String face, String phrase, bool broken) {
+  //Serial.println("Setting Mood...");
   current_mood = mood;
   current_broken = broken;
 
@@ -138,4 +141,5 @@ void setMood(uint8_t mood, String face, String phrase, bool broken) {
   } else {
     current_phrase = palnagotchi_moods_desc[current_mood];
   }
+  //Serial.println("Mood has been set.");
 }

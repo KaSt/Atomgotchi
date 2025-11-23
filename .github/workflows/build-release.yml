@@ -60,7 +60,7 @@ jobs:
           # Create release notes
           RELEASE_NOTES="## Gotchi Firmware v${{ steps.version.outputs.version }}
 
-**Build:** \\\`${{ steps.version.outputs.commit_hash }}\\\`
+**Build:** \`${{ steps.version.outputs.commit_hash }}\`
 **Date:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
 
 ### Changes
